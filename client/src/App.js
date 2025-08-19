@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Home from './pages/Home';
+import Register from './pages/Register';
 import './App.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <main className="flex-grow">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/register" element={<Register />} />
           </Routes>
         </main>
         <Footer />
