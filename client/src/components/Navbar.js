@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, ShoppingCart, User, Search } from 'lucide-react';
+import { Menu, X, ShoppingCart, User, Search, LogOut, ChevronDown } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false); // 실제로는 context나 state management 사용
+  const [isServicesHovered, setIsServicesHovered] = useState(false);
+  const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
   const toggleMenu = () => {
@@ -12,7 +14,7 @@ const Navbar = () => {
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
+    logout();
     navigate('/');
   };
 
@@ -30,36 +32,94 @@ const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
-            <Link to="/" className="text-gray-700 hover:text-blue-600 font-medium">
+            <Link to="/" className="text-gray-700 hover:text-blue-600 font-bold">
               홈
             </Link>
-          </div>
-
-          {/* Search Bar */}
-          <div className="hidden md:flex items-center space-x-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="서비스 검색..."
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
-              />
+            <Link to="/about" className="text-gray-700 hover:text-blue-600 font-bold">
+              LABSemble 소개
+            </Link>
+            <div 
+              className="relative"
+              onMouseEnter={() => setIsServicesHovered(true)}
+              onMouseLeave={() => setIsServicesHovered(false)}
+            >
+              <div className="flex items-center space-x-1 text-gray-700 hover:text-blue-600 font-bold cursor-pointer">
+                <span>서비스</span>
+                <ChevronDown className="w-4 h-4" />
+              </div>
+              
+              {/* Services Dropdown */}
+              {isServicesHovered && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                  <div className="py-2">
+                    <Link 
+                      to="/services/smt" 
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                    >
+                      SMT
+                    </Link>
+                    <Link 
+                      to="/services/artwork" 
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                    >
+                      아트웍
+                    </Link>
+                    <Link 
+                      to="/services/3d-mockup" 
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                    >
+                      3D 목업
+                    </Link>
+                    <Link 
+                      to="/services/mold" 
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                    >
+                      금형
+                    </Link>
+                    <Link 
+                      to="/services/mj-distribution" 
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                    >
+                      MJ유통
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
+
+            <Link to="/news" className="text-gray-700 hover:text-blue-600 font-bold">
+              Labsemble 소식
+            </Link>
+            <Link to="/contact" className="text-gray-700 hover:text-blue-600 font-bold">
+              Contact
+            </Link>
           </div>
 
           {/* User Actions */}
           <div className="hidden md:flex items-center space-x-4">
-            {isLoggedIn ? (
+            {isAuthenticated ? (
               <>
-                <Link to="/dashboard" className="text-gray-700 hover:text-blue-600">
-                  <User className="w-5 h-5" />
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="text-gray-700 hover:text-blue-600 font-medium"
-                >
-                  로그아웃
-                </button>
+                <div className="flex items-center space-x-3">
+                  <Link 
+                    to="/dashboard"
+                    className="flex items-center space-x-2 bg-gray-100 px-3 py-2 rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
+                  >
+                    <User className="w-4 h-4 text-gray-600" />
+                    <span className="text-sm font-medium text-gray-700">
+                      {user?.companyName 
+                        ? `(${user.companyName}) ${user.username}${user?.isAdmin ? ' 관리자님' : ''}`
+                        : `${user.username}${user?.isAdmin ? ' 관리자님' : ''}`
+                      }
+                    </span>
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center space-x-2 text-gray-700 hover:text-red-600 font-medium transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>로그아웃</span>
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -84,72 +144,156 @@ const Navbar = () => {
           </div>
         </div>
 
-                  {/* Mobile Navigation */}
-          {isMenuOpen && (
-            <div className="md:hidden">
-              <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 border-t border-gray-200">
-                <Link
-                  to="/"
-                  className="block px-3 py-2 text-gray-700 hover:text-blue-600 font-medium"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  홈
-                </Link>
-              
-              {/* Mobile Search */}
-              <div className="px-3 py-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    placeholder="서비스 검색..."
-                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full"
-                  />
+        {/* Mobile Navigation */}
+        {isMenuOpen && (
+          <div className="md:hidden">
+            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 border-t border-gray-200">
+              <Link
+                to="/"
+                className="block px-3 py-2 text-gray-700 hover:text-blue-600 font-bold"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                홈
+              </Link>
+              <Link
+                to="/about"
+                className="block px-3 py-2 text-gray-700 hover:text-blue-600 font-bold"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                LABSemble 소개
+              </Link>
+              <div 
+                className="relative"
+                onMouseEnter={() => setIsServicesHovered(true)}
+                onMouseLeave={() => setIsServicesHovered(false)}
+              >
+                <div className="flex items-center space-x-1 text-gray-700 hover:text-blue-600 font-bold cursor-pointer" onClick={() => setIsMenuOpen(false)}>
+                  <span>서비스</span>
+                  <ChevronDown className="w-4 h-4" />
                 </div>
-              </div>
-
-              {/* Mobile Auth */}
-              <div className="px-3 py-2 space-y-2">
-                {isLoggedIn ? (
-                  <>
-                    <Link
-                      to="/dashboard"
-                      className="block text-gray-700 hover:text-blue-600 font-medium"
-                      onClick={() => setIsMenuOpen(false)}
-                    >
-                      대시보드
-                    </Link>
-                    <button
-                      onClick={() => {
-                        handleLogout();
-                        setIsMenuOpen(false);
-                      }}
-                      className="block text-gray-700 hover:text-blue-600 font-medium w-full text-left"
-                    >
-                      로그아웃
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Link
-                      to="/login"
-                      className="block text-gray-700 hover:text-blue-600 font-medium"
-                      onClick={() => setIsMenuOpen(false)}
-                    >
-                      로그인
-                    </Link>
-                    <Link
-                      to="/register"
-                      className="block btn-primary text-center"
-                      onClick={() => setIsMenuOpen(false)}
-                    >
-                      회원가입
-                    </Link>
-                  </>
+                
+                {/* Services Dropdown */}
+                {isServicesHovered && (
+                  <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                    <div className="py-2">
+                      <Link 
+                        to="/services/smt" 
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        SMT
+                      </Link>
+                      <Link 
+                        to="/services/artwork" 
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        아트웍
+                      </Link>
+                      <Link 
+                        to="/services/3d-mockup" 
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        3D 목업
+                      </Link>
+                      <Link 
+                        to="/services/mold" 
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        금형
+                      </Link>
+                      <Link 
+                        to="/services/mj-distribution" 
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        MJ유통
+                      </Link>
+                    </div>
+                  </div>
                 )}
               </div>
+              <Link
+                to="/inquiry"
+                className="block px-3 py-2 text-gray-700 hover:text-blue-600 font-bold"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                문의
+              </Link>
+              <Link
+                to="/news"
+                className="block px-3 py-2 text-gray-700 hover:text-blue-600 font-bold"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Labsemble 소식
+              </Link>
+              <Link
+                to="/resources"
+                className="block px-3 py-2 text-gray-700 hover:text-blue-600 font-bold"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                자료실
+              </Link>
+              <Link
+                to="/contact"
+                className="block px-3 py-2 text-gray-700 hover:text-blue-600 font-bold"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Contact
+              </Link>
+            
+            {/* Mobile Auth */}
+            <div className="px-3 py-2 space-y-2">
+              {isAuthenticated ? (
+                <>
+                  <Link
+                    to="/dashboard"
+                    className="px-3 py-2 bg-gray-100 rounded-lg hover:bg-blue-50 transition-colors block"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <User className="w-4 h-4 text-gray-600" />
+                      <span className="text-sm font-medium text-gray-700">
+                        {user?.companyName 
+                          ? `(${user.companyName}) ${user.username}${user?.isAdmin ? ' 관리자님' : ''}`
+                          : `${user.username}${user?.isAdmin ? ' 관리자님' : ''}`
+                        }
+                      </span>
+                    </div>
+                  </Link>
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setIsMenuOpen(false);
+                    }}
+                    className="flex items-center space-x-2 text-gray-700 hover:text-red-600 font-medium w-full text-left px-3 py-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>로그아웃</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    className="block text-gray-700 hover:text-blue-600 font-medium"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    로그인
+                  </Link>
+                  <Link
+                    to="/register"
+                    className="block btn-primary text-center"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    회원가입
+                  </Link>
+                </>
+              )}
             </div>
           </div>
+        </div>
         )}
       </div>
     </nav>

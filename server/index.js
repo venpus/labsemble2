@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const { testConnection, createUsersTable } = require('./config/database');
 require('dotenv').config();
 
 const app = express();
@@ -22,9 +23,8 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Temporary: Comment out routes until they're properly set up
 // Routes
-// app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth', require('./routes/auth'));
 // app.use('/api/products', require('./routes/products'));
 // app.use('/api/orders', require('./routes/orders'));
 // app.use('/api/quotations', require('./routes/quotations'));
@@ -54,8 +54,16 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Manufacturing server running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test`);
+  
+  // 데이터베이스 연결 테스트 및 테이블 생성
+  try {
+    await testConnection();
+    await createUsersTable();
+  } catch (error) {
+    console.error('❌ 데이터베이스 초기화 실패:', error.message);
+  }
 }); 

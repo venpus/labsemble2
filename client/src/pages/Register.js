@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, User, Lock, Phone, Mail, Building, UserCheck } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
 const Register = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -51,10 +53,6 @@ const Register = () => {
       toast.error('올바른 이메일 주소를 입력해주세요.');
       return false;
     }
-    if (!formData.companyName) {
-      toast.error('회사명을 입력해주세요.');
-      return false;
-    }
     return true;
   };
 
@@ -68,13 +66,48 @@ const Register = () => {
     setIsLoading(true);
     
     try {
-      // TODO: 실제 API 호출로 대체
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 로딩 시뮬레이션
-      
-      toast.success('회원가입이 완료되었습니다!');
-      navigate('/login');
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+          contactPerson: formData.contactPerson,
+          phone: formData.phone,
+          email: formData.email,
+          companyName: formData.companyName
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || '회원가입 중 오류가 발생했습니다.');
+      }
+
+      // 회원가입 성공 시 자동 로그인
+      if (data.token && data.user) {
+        login(data.user, data.token);
+        toast.success('회원가입이 완료되었고 자동으로 로그인되었습니다!');
+      } else {
+        toast.success(data.message || '회원가입이 완료되었습니다!');
+      }
+
+      navigate('/register-success', { 
+        state: { 
+          userData: {
+            username: formData.username,
+            email: formData.email,
+            companyName: formData.companyName,
+            contactPerson: formData.contactPerson
+          }
+        } 
+      });
     } catch (error) {
-      toast.error('회원가입 중 오류가 발생했습니다.');
+      console.error('회원가입 오류:', error);
+      toast.error(error.message || '회원가입 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
@@ -235,7 +268,7 @@ const Register = () => {
             {/* Company Name */}
             <div>
               <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-2">
-                회사명 *
+                회사명
               </label>
               <div className="relative">
                 <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -246,11 +279,12 @@ const Register = () => {
                   value={formData.companyName}
                   onChange={handleInputChange}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="회사명을 입력하세요"
-                  required
+                  placeholder="회사명을 입력하세요 (선택사항)"
                 />
               </div>
             </div>
+
+
 
             {/* Submit Button */}
             <button
