@@ -1,0 +1,44 @@
+[Unit]
+Description=LABSEMBLE Manufacturing Website
+Documentation=https://labsemble.com
+After=network.target mongod.service
+Wants=network.target mongod.service
+
+[Service]
+Type=forking
+User=labsemble
+Group=labsemble
+WorkingDirectory=/var/www/labsemble
+ExecStart=/usr/bin/pm2 start ecosystem.config.js --env production
+ExecReload=/usr/bin/pm2 reload labsemble-server
+ExecStop=/usr/bin/pm2 stop labsemble-server
+ExecStopPost=/usr/bin/pm2 delete labsemble-server
+PIDFile=/home/labsemble/.pm2/pm2.pid
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=labsemble
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/labsemble /var/log/labsemble /home/labsemble/.pm2
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+LimitAS=infinity
+LimitFSIZE=infinity
+
+[Install]
+WantedBy=multi-user.target 
