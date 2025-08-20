@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import RegisterSuccess from './pages/RegisterSuccess';
 import Dashboard from './pages/Dashboard/Dashboard';
+import ProjectRegister from './components/Project/MJ/ProjectRegister';
 import './App.css';
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
               <Route path="/dashboard/admin/partners" element={<Dashboard />} />
               <Route path="/dashboard/admin/users" element={<Dashboard />} />
               <Route path="/dashboard/admin" element={<Dashboard />} />
+              <Route path="/services/mj-distribution" element={<ProjectRegister />} />
             </Routes>
           </main>
           <Footer />

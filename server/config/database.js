@@ -89,8 +89,112 @@ const createUsersTable = async () => {
   }
 };
 
+// MJ 프로젝트 테이블 생성 함수
+const createMJProjectTable = async () => {
+  try {
+    const connection = await pool.getConnection();
+    
+    // 테이블이 존재하는지 확인
+    const [tables] = await connection.execute('SHOW TABLES LIKE "mj_project"');
+    
+    if (tables.length === 0) {
+      // 테이블이 없는 경우 새로 생성
+      const createTableSQL = `
+        CREATE TABLE mj_project (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          project_name VARCHAR(200) NOT NULL,
+          description TEXT,
+          quantity INT NOT NULL,
+          target_price DECIMAL(15,2) DEFAULT NULL,
+          status ENUM('pending', 'approved', 'rejected', 'completed') DEFAULT 'pending',
+          user_id INT NOT NULL,
+          created_by INT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `;
+      await connection.execute(createTableSQL);
+      console.log('✅ MJ 프로젝트 테이블 생성 완료');
+    } else {
+      // 테이블이 있는 경우 created_by 필드 추가
+      try {
+        await connection.execute('ALTER TABLE mj_project ADD COLUMN created_by INT NOT NULL AFTER user_id');
+        await connection.execute('ALTER TABLE mj_project ADD CONSTRAINT fk_mj_project_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE');
+        console.log('✅ MJ 프로젝트 테이블에 created_by 필드 추가 완료');
+      } catch (error) {
+        if (error.code === 'ER_DUP_FIELDNAME') {
+          console.log('✅ MJ 프로젝트 테이블의 created_by 필드가 이미 존재합니다');
+        } else {
+          console.error('❌ created_by 필드 추가 실패:', error.message);
+        }
+      }
+    }
+    
+    connection.release();
+  } catch (error) {
+    console.error('❌ MJ 프로젝트 테이블 생성/수정 실패:', error.message);
+  }
+};
+
+// MJ 프로젝트 참고링크 테이블 생성 함수
+const createMJProjectReferenceLinksTable = async () => {
+  try {
+    const connection = await pool.getConnection();
+    
+    // 테이블 생성
+    const createTableSQL = `
+      CREATE TABLE IF NOT EXISTS mj_project_reference_links (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_id INT NOT NULL,
+        url TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES mj_project(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `;
+    
+    await connection.execute(createTableSQL);
+    console.log('✅ MJ 프로젝트 참고링크 테이블 생성/확인 완료');
+    
+    connection.release();
+  } catch (error) {
+    console.error('❌ MJ 프로젝트 참고링크 테이블 생성 실패:', error.message);
+  }
+};
+
+// MJ 프로젝트 이미지 테이블 생성 함수
+const createMJProjectImagesTable = async () => {
+  try {
+    const connection = await pool.getConnection();
+    
+    // 테이블 생성
+    const createTableSQL = `
+      CREATE TABLE IF NOT EXISTS mj_project_images (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_id INT NOT NULL,
+        file_name VARCHAR(255) NOT NULL,
+        file_path VARCHAR(500) NOT NULL,
+        original_name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES mj_project(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `;
+    
+    await connection.execute(createTableSQL);
+    console.log('✅ MJ 프로젝트 이미지 테이블 생성/확인 완료');
+    
+    connection.release();
+  } catch (error) {
+    console.error('❌ MJ 프로젝트 이미지 테이블 생성 실패:', error.message);
+  }
+};
+
 module.exports = {
   pool,
   testConnection,
-  createUsersTable
+  createUsersTable,
+  createMJProjectTable,
+  createMJProjectReferenceLinksTable,
+  createMJProjectImagesTable
 }; 

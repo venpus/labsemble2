@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, ShoppingCart, User, Search, LogOut, ChevronDown } from 'lucide-react';
+import { Menu, X, User, LogOut, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isServicesHovered, setIsServicesHovered] = useState(false);
+  const [servicesTimeout, setServicesTimeout] = useState(null);
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -40,8 +41,19 @@ const Navbar = () => {
             </Link>
             <div 
               className="relative"
-              onMouseEnter={() => setIsServicesHovered(true)}
-              onMouseLeave={() => setIsServicesHovered(false)}
+              onMouseEnter={() => {
+                if (servicesTimeout) {
+                  clearTimeout(servicesTimeout);
+                  setServicesTimeout(null);
+                }
+                setIsServicesHovered(true);
+              }}
+              onMouseLeave={() => {
+                const timeout = setTimeout(() => {
+                  setIsServicesHovered(false);
+                }, 300); // 300ms 지연
+                setServicesTimeout(timeout);
+              }}
             >
               <div className="flex items-center space-x-1 text-gray-700 hover:text-blue-600 font-bold cursor-pointer">
                 <span>서비스</span>
@@ -50,38 +62,54 @@ const Navbar = () => {
               
               {/* Services Dropdown */}
               {isServicesHovered && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                  <div className="py-2">
+                <div 
+                  className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+                  onMouseEnter={() => {
+                    if (servicesTimeout) {
+                      clearTimeout(servicesTimeout);
+                      setServicesTimeout(null);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    const timeout = setTimeout(() => {
+                      setIsServicesHovered(false);
+                    }, 300); // 300ms 지연
+                    setServicesTimeout(timeout);
+                  }}
+                >
+                  <div className="py-3">
                     <Link 
                       to="/services/smt" 
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                      className="block px-5 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium transition-colors"
                     >
                       SMT
                     </Link>
                     <Link 
                       to="/services/artwork" 
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                      className="block px-5 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium transition-colors"
                     >
                       아트웍
                     </Link>
                     <Link 
                       to="/services/3d-mockup" 
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                      className="block px-5 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium transition-colors"
                     >
                       3D 목업
                     </Link>
                     <Link 
                       to="/services/mold" 
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                      className="block px-5 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium transition-colors"
                     >
                       금형
                     </Link>
-                    <Link 
-                      to="/services/mj-distribution" 
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
-                    >
-                      MJ유통
-                    </Link>
+                    {isAuthenticated && (user?.isAdmin || user?.partnerName === 'MJ유통') && (
+                      <Link 
+                        to="/services/mj-distribution" 
+                        className="block px-5 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium transition-colors"
+                      >
+                        MJ유통
+                      </Link>
+                    )}
                   </div>
                 </div>
               )}
@@ -204,13 +232,15 @@ const Navbar = () => {
                       >
                         금형
                       </Link>
-                      <Link 
-                        to="/services/mj-distribution" 
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
-                        onClick={() => setIsMenuOpen(false)}
-                      >
-                        MJ유통
-                      </Link>
+                      {isAuthenticated && (user?.isAdmin || user?.partnerName === 'MJ유통') && (
+                        <Link 
+                          to="/services/mj-distribution" 
+                          className="block px-4 py-2 text-sm text-gray-700 hover:text-blue-600 font-medium"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          MJ유통
+                        </Link>
+                      )}
                     </div>
                   </div>
                 )}

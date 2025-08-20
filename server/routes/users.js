@@ -6,11 +6,24 @@ const { pool } = require('../config/database');
 // 모든 사용자 조회 (비밀번호 제외)
 router.get('/', async (req, res) => {
   try {
-    const [rows] = await pool.execute(`
+    const { partner } = req.query;
+    
+    let sql = `
       SELECT id, username, contact_person, phone, email, company_name, is_admin, partner_name, created_at, updated_at 
       FROM users 
-      ORDER BY created_at DESC
-    `);
+    `;
+    
+    let params = [];
+    
+    // 특정 파트너스로 필터링
+    if (partner) {
+      sql += ` WHERE partner_name = ?`;
+      params.push(partner);
+    }
+    
+    sql += ` ORDER BY created_at DESC`;
+    
+    const [rows] = await pool.execute(sql, params);
     res.json({ success: true, users: rows });
   } catch (error) {
     console.error('사용자 조회 오류:', error);
