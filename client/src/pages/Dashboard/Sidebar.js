@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
-const Sidebar = () => {
+const Sidebar = ({ selectedMenu, setSelectedMenu }) => {
   const { user } = useAuth();
   const isAdmin = user?.isAdmin;
 
@@ -87,8 +87,19 @@ const Sidebar = () => {
     }
   ];
 
-  // 메뉴 아이템 결합 (관리자인 경우 관리자 메뉴 추가)
-  const allMenuItems = isAdmin ? [...userMenuItems, ...adminMenuItems] : userMenuItems;
+  // 메뉴 아이템 결합 (관리자인 경우 회사정보 제외하고 관리자 메뉴 추가)
+  const getMenuItems = () => {
+    if (isAdmin) {
+      // 관리자는 회사정보 메뉴를 제외한 일반 메뉴 + 관리자 메뉴
+      const userMenuWithoutCompany = userMenuItems.filter(item => item.id !== 'company');
+      return [...userMenuWithoutCompany, ...adminMenuItems];
+    } else {
+      // 일반 사용자는 모든 일반 메뉴
+      return userMenuItems;
+    }
+  };
+
+  const allMenuItems = getMenuItems();
 
   return (
     <div className="w-64 bg-white shadow-lg min-h-screen">
@@ -117,6 +128,7 @@ const Sidebar = () => {
               <Link
                 key={item.id}
                 to={item.path}
+                onClick={() => setSelectedMenu && setSelectedMenu(item.id)}
                 className={`group flex items-center space-x-3 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
                   isAdminItem 
                     ? 'text-red-700 hover:bg-red-50 hover:text-red-800 border-l-4 border-red-500' 

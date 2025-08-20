@@ -24,6 +24,9 @@ function App() {
               <Route path="/register" element={<Register />} />
               <Route path="/register-success" element={<RegisterSuccess />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard/admin/partners" element={<Dashboard />} />
+              <Route path="/dashboard/admin/users" element={<Dashboard />} />
+              <Route path="/dashboard/admin" element={<Dashboard />} />
             </Routes>
           </main>
           <Footer />

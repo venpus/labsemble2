@@ -25,10 +25,11 @@ app.use('/api/', limiter);
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/partners', require('./routes/partners'));
+app.use('/api/users', require('./routes/users'));
 // app.use('/api/products', require('./routes/products'));
 // app.use('/api/orders', require('./routes/orders'));
 // app.use('/api/quotations', require('./routes/quotations'));
-// app.use('/api/users', require('./routes/users'));
 
 // Health check
 app.get('/api/health', (req, res) => {
