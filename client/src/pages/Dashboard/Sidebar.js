@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { 
   Home, 
   User, 
-  ShoppingCart, 
   FileText, 
   Settings,
   Building,
@@ -31,13 +30,6 @@ const Sidebar = ({ selectedMenu, setSelectedMenu }) => {
       icon: User,
       path: '/dashboard/profile',
       description: '개인정보 및 계정 설정'
-    },
-    {
-      id: 'orders',
-      label: '주문 내역',
-      icon: ShoppingCart,
-      path: '/dashboard/orders',
-      description: '주문 및 결제 내역 조회'
     },
     {
       id: 'quotations',
@@ -78,6 +70,7 @@ const Sidebar = ({ selectedMenu, setSelectedMenu }) => {
       path: '/dashboard/admin/partners',
       description: '파트너사 정보 및 권한 관리'
     },
+
     {
       id: 'admin-dashboard',
       label: '관리자 대시보드',
@@ -87,16 +80,41 @@ const Sidebar = ({ selectedMenu, setSelectedMenu }) => {
     }
   ];
 
+  // MJ 프로젝트 메뉴 (admin 또는 MJ유통 파트너 사용자)
+  const mjProjectMenuItem = {
+    id: 'mj-projects',
+    label: 'MJ 프로젝트',
+    icon: FileText,
+    path: '/dashboard/mj-projects',
+    description: 'MJ 프로젝트 관리 및 조회'
+  };
+
   // 메뉴 아이템 결합 (관리자인 경우 회사정보 제외하고 관리자 메뉴 추가)
   const getMenuItems = () => {
+    let menuItems = [];
+    
     if (isAdmin) {
       // 관리자는 회사정보 메뉴를 제외한 일반 메뉴 + 관리자 메뉴
       const userMenuWithoutCompany = userMenuItems.filter(item => item.id !== 'company');
-      return [...userMenuWithoutCompany, ...adminMenuItems];
+      menuItems = [...userMenuWithoutCompany, ...adminMenuItems];
     } else {
       // 일반 사용자는 모든 일반 메뉴
-      return userMenuItems;
+      menuItems = [...userMenuItems];
     }
+    
+    // MJ 프로젝트 메뉴를 설정 메뉴 위에 삽입 (admin 또는 MJ유통 파트너 사용자)
+    if (isAdmin || user?.partnerName === 'MJ유통') {
+      // 설정 메뉴의 인덱스를 찾아서 그 앞에 MJ 프로젝트 메뉴 삽입
+      const settingsIndex = menuItems.findIndex(item => item.id === 'settings');
+      if (settingsIndex !== -1) {
+        menuItems.splice(settingsIndex, 0, mjProjectMenuItem);
+      } else {
+        // 설정 메뉴가 없으면 맨 뒤에 추가
+        menuItems.push(mjProjectMenuItem);
+      }
+    }
+    
+    return menuItems;
   };
 
   const allMenuItems = getMenuItems();
@@ -130,20 +148,20 @@ const Sidebar = ({ selectedMenu, setSelectedMenu }) => {
                 to={item.path}
                 onClick={() => setSelectedMenu && setSelectedMenu(item.id)}
                 className={`group flex items-center space-x-3 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                  isAdminItem 
+                  isAdminItem
                     ? 'text-red-700 hover:bg-red-50 hover:text-red-800 border-l-4 border-red-500' 
                     : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
                 }`}
               >
                 <IconComponent className={`w-5 h-5 transition-colors ${
-                  isAdminItem 
+                  isAdminItem
                     ? 'text-red-500 group-hover:text-red-600' 
                     : 'text-gray-400 group-hover:text-blue-600'
                 }`} />
                 <div className="flex-1">
                   <div className="font-medium">{item.label}</div>
                   <div className={`text-xs transition-colors ${
-                    isAdminItem 
+                    isAdminItem
                       ? 'text-red-500 group-hover:text-red-600' 
                       : 'text-gray-500 group-hover:text-blue-500'
                   }`}>

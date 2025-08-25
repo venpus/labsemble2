@@ -124,7 +124,7 @@ router.post('/register', authMiddleware, upload.array('images', 10), async (req,
       for (const file of req.files) {
         await connection.execute(
           'INSERT INTO mj_project_images (project_id, file_name, file_path, original_name) VALUES (?, ?, ?, ?)',
-          [projectId, file.filename, file.path, file.originalname]
+          [projectId, file.filename, file.filename, file.originalname]
         );
       }
     }
@@ -146,9 +146,12 @@ router.post('/register', authMiddleware, upload.array('images', 10), async (req,
 });
 
 // MJ 프로젝트 목록 조회
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   try {
-    const [projects] = await pool.execute(`
+    const userId = req.user.userId;
+    const isAdmin = req.user.isAdmin;
+    
+    let sql = `
       SELECT 
         p.id,
         p.project_name,
@@ -156,23 +159,38 @@ router.get('/', async (req, res) => {
         p.quantity,
         p.target_price,
         p.status,
+        p.user_id,
+        p.created_by,
         p.created_at,
         u.username,
         u.company_name,
         c.username as created_by_username,
-        c.company_name as created_by_company
+        c.company_name as created_by_company,
+        (SELECT file_path FROM mj_project_images WHERE project_id = p.id ORDER BY id ASC LIMIT 1) as representative_image
       FROM mj_project p
       JOIN users u ON p.user_id = u.id
       JOIN users c ON p.created_by = c.id
-      ORDER BY p.created_at DESC
-    `);
+    `;
     
-    res.json({ projects });
+    let params = [];
+    
+    // Admin이 아닌 경우 사용자별 필터링
+    if (!isAdmin) {
+      // 일반 사용자는 user_id로만 검색 (자신이 소유한 프로젝트만 표시)
+      sql += ' WHERE p.user_id = ?';
+      params.push(userId);
+    }
+    
+    sql += ' ORDER BY p.created_at DESC';
+    
+    const [projects] = await pool.execute(sql, params);
+    
+    res.json({ success: true, projects });
   } catch (error) {
     console.error('MJ 프로젝트 목록 조회 오류:', error);
-    res.status(500).json({ error: '프로젝트 목록 조회 중 오류가 발생했습니다.' });
+    res.status(500).json({ success: false, error: '프로젝트 목록 조회 중 오류가 발생했습니다.' });
   }
-});
+ });
 
 // MJ 프로젝트 상세 조회
 router.get('/:id', async (req, res) => {
@@ -185,6 +203,10 @@ router.get('/:id', async (req, res) => {
         p.*,
         u.username,
         u.company_name,
+        u.phone,
+        u.email,
+        u.contact_person,
+        u.partner_name,
         c.username as created_by_username,
         c.company_name as created_by_company
       FROM mj_project p
@@ -194,7 +216,7 @@ router.get('/:id', async (req, res) => {
     `, [id]);
     
     if (projects.length === 0) {
-      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+      return res.status(404).json({ success: false, error: '프로젝트를 찾을 수 없습니다.' });
     }
     
     const project = projects[0];
@@ -212,6 +234,7 @@ router.get('/:id', async (req, res) => {
     );
     
     res.json({
+      success: true,
       project: {
         ...project,
         referenceLinks: links,
@@ -221,7 +244,7 @@ router.get('/:id', async (req, res) => {
     
   } catch (error) {
     console.error('MJ 프로젝트 상세 조회 오류:', error);
-    res.status(500).json({ error: '프로젝트 상세 조회 중 오류가 발생했습니다.' });
+    res.status(500).json({ success: false, error: '프로젝트 상세 조회 중 오류가 발생했습니다.' });
   }
 });
 
@@ -249,6 +272,159 @@ router.patch('/:id/status', async (req, res) => {
   }
 });
 
+// Payment 데이터 저장
+router.post('/:id/payment', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const projectId = req.params.id;
+    const {
+      unitPrice,
+      selectedFeeRate,
+      paymentStatus,
+      paymentDates,
+      balanceDueDate,
+      advanceDueDate,
+      paymentDueDates,
+      factoryShippingCost,
+      subtotal,
+      fee,
+      totalAmount,
+      advancePayment,
+      additionalCostItems
+    } = req.body;
+
+    // 숫자 타입으로 변환
+    const numericUnitPrice = Number(unitPrice) || 0;
+    const numericSelectedFeeRate = Number(selectedFeeRate) || 0;
+    const numericFactoryShippingCost = Number(factoryShippingCost) || 0;
+    const numericSubtotal = Number(subtotal) || 0;
+    const numericFee = Number(fee) || 0;
+    const numericTotalAmount = Number(totalAmount) || 0;
+    const numericAdvancePayment = Number(advancePayment) || 0;
+    
+    // 프로젝트 존재 여부 확인
+    const [project] = await connection.execute(
+      'SELECT * FROM mj_project WHERE id = ?',
+      [projectId]
+    );
+    
+    if (project.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    // 권한 확인 (프로젝트 소유자 또는 admin만 수정 가능)
+    const [user] = await connection.execute(
+      'SELECT is_admin FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+    
+    if (user.length === 0) {
+      return res.status(401).json({ error: '사용자 인증이 필요합니다.' });
+    }
+    
+    if (!user[0].is_admin && project[0].user_id !== req.user.userId) {
+      return res.status(403).json({ error: '프로젝트를 수정할 권한이 없습니다.' });
+    }
+    
+    // 날짜 형식 처리 함수
+    const processDate = (dateValue) => {
+      if (!dateValue || dateValue === '') {
+        return null;
+      }
+      
+      // ISO 문자열인 경우 YYYY-MM-DD 형식으로 변환
+      if (typeof dateValue === 'string' && dateValue.includes('T')) {
+        try {
+          const date = new Date(dateValue);
+          if (isNaN(date.getTime())) {
+            return null; // 유효하지 않은 날짜
+          }
+          return date.toISOString().split('T')[0]; // YYYY-MM-DD 형식
+        } catch (error) {
+          console.error('날짜 변환 오류:', error);
+          return null;
+        }
+      }
+      
+      // 이미 YYYY-MM-DD 형식인 경우 그대로 사용
+      if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+        return dateValue;
+      }
+      
+      return null;
+    };
+    
+    // balance_due_date 처리
+    const processedBalanceDueDate = processDate(balanceDueDate);
+    
+    // advance_due_date 처리
+    const processedAdvanceDueDate = processDate(advanceDueDate);
+    
+    // Payment 데이터 업데이트
+    await connection.execute(
+      `UPDATE mj_project SET 
+        unit_price = ?,
+        fee_rate = ?,
+        payment_status = ?,
+        payment_dates = ?,
+        balance_due_date = ?,
+        advance_due_date = ?,
+        payment_due_dates = ?,
+        factory_shipping_cost = ?,
+        subtotal = ?,
+        fee = ?,
+        total_amount = ?,
+        advance_payment = ?,
+        additional_cost_items = ?,
+        updated_at = NOW()
+      WHERE id = ?`,
+      [
+        numericUnitPrice,
+        numericSelectedFeeRate,
+        JSON.stringify(paymentStatus),
+        JSON.stringify(paymentDates),
+        processedBalanceDueDate,
+        processedAdvanceDueDate,
+        JSON.stringify(paymentDueDates),
+        numericFactoryShippingCost,
+        numericSubtotal,
+        numericFee,
+        numericTotalAmount,
+        numericAdvancePayment,
+        additionalCostItems,
+        projectId
+      ]
+    );
+    
+    // additional_cost_items가 있는 경우 기존 additional_cost 필드도 동기화 (하위 호환성)
+    if (additionalCostItems) {
+      try {
+        const items = JSON.parse(additionalCostItems);
+        if (items && items.length > 0) {
+          const totalAdditionalCost = items.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+          const firstItemDescription = items[0]?.description || '';
+          
+          await connection.execute(
+            'UPDATE mj_project SET additional_cost = ?, additional_cost_description = ? WHERE id = ?',
+            [totalAdditionalCost, firstItemDescription, projectId]
+          );
+        }
+      } catch (error) {
+        console.error('추가 비용 항목 동기화 실패:', error);
+      }
+    }
+    
+    res.json({ message: 'Payment 데이터가 성공적으로 저장되었습니다.' });
+    
+  } catch (error) {
+    console.error('Payment 데이터 저장 오류:', error);
+    res.status(500).json({ error: 'Payment 데이터 저장 중 오류가 발생했습니다.' });
+  } finally {
+    connection.release();
+  }
+});
+
 // MJ 프로젝트 삭제
 router.delete('/:id', async (req, res) => {
   const connection = await pool.getConnection();
@@ -261,7 +437,7 @@ router.delete('/:id', async (req, res) => {
     // 이미지 파일 삭제
     const [images] = await connection.execute(
       'SELECT file_path FROM mj_project_images WHERE project_id = ?',
-      [id]
+      [req.params.id]
     );
     
     for (const image of images) {

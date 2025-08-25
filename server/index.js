@@ -8,7 +8,8 @@ const {
   createUsersTable, 
   createMJProjectTable, 
   createMJProjectReferenceLinksTable, 
-  createMJProjectImagesTable 
+  createMJProjectImagesTable,
+  migratePaymentColumns
 } = require('./config/database');
 require('dotenv').config();
 
@@ -50,6 +51,48 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Manufacturing API is running' });
 });
 
+// Migration status check
+app.get('/api/migration/status', async (req, res) => {
+  try {
+    const { pool } = require('./config/database');
+    const connection = await pool.getConnection();
+    
+    // additional_cost_items 컬럼 존재 여부 확인
+    const [columns] = await connection.execute(`
+      SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = 'labsemble' 
+      AND TABLE_NAME = 'mj_project' 
+      AND COLUMN_NAME IN ('additional_cost', 'additional_cost_description', 'additional_cost_items')
+    `);
+    
+    // 기존 데이터 확인
+    const [projects] = await connection.execute(`
+      SELECT 
+        COUNT(*) as total_projects,
+        COUNT(CASE WHEN additional_cost > 0 THEN 1 END) as projects_with_legacy_cost,
+        COUNT(CASE WHEN additional_cost_items IS NOT NULL THEN 1 END) as projects_with_new_items
+      FROM mj_project
+    `);
+    
+    connection.release();
+    
+    res.json({
+      status: 'OK',
+      columns: columns,
+      data_summary: projects[0],
+      migration_status: {
+        has_legacy_cost: projects[0].projects_with_legacy_cost > 0,
+        has_new_items: projects[0].projects_with_new_items > 0,
+        needs_migration: projects[0].projects_with_legacy_cost > 0 && projects[0].projects_with_new_items === 0
+      }
+    });
+  } catch (error) {
+    console.error('마이그레이션 상태 확인 오류:', error);
+    res.status(500).json({ error: '마이그레이션 상태 확인 실패', message: error.message });
+  }
+});
+
 // Simple test endpoint
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Server is working correctly!' });
@@ -81,6 +124,7 @@ app.listen(PORT, async () => {
     await createMJProjectTable();
     await createMJProjectReferenceLinksTable();
     await createMJProjectImagesTable();
+    await migratePaymentColumns();
   } catch (error) {
     console.error('❌ 데이터베이스 초기화 실패:', error.message);
   }

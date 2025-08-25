@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import Sidebar from './Sidebar';
 import Partners from './Admin/Partners';
 import UserManage from './Admin/UserManage';
+import ProjectLists from '../../components/Project/MJ/ProjectLists';
+import ProjectDetails from '../../components/Project/MJ/ProjectDetails';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -19,6 +21,10 @@ const Dashboard = () => {
       setSelectedMenu('user-management');
     } else if (path.includes('/admin')) {
       setSelectedMenu('admin-dashboard');
+    } else if (path.includes('/mj-projects/') && path.split('/').length > 3) {
+      setSelectedMenu('mj-project-details');
+    } else if (path.includes('/mj-projects')) {
+      setSelectedMenu('mj-projects');
     } else {
       setSelectedMenu('dashboard');
     }
@@ -30,6 +36,10 @@ const Dashboard = () => {
         return <Partners />;
       case 'user-management':
         return <UserManage />;
+      case 'mj-projects':
+        return <ProjectLists />;
+      case 'mj-project-details':
+        return <ProjectDetails />;
       case 'admin-dashboard':
         return (
           <div className="p-6">

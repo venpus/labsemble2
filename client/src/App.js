@@ -28,6 +28,8 @@ function App() {
               <Route path="/dashboard/admin/partners" element={<Dashboard />} />
               <Route path="/dashboard/admin/users" element={<Dashboard />} />
               <Route path="/dashboard/admin" element={<Dashboard />} />
+              <Route path="/dashboard/mj-projects" element={<Dashboard />} />
+              <Route path="/dashboard/mj-projects/:id" element={<Dashboard />} />
               <Route path="/services/mj-distribution" element={<ProjectRegister />} />
             </Routes>
           </main>
