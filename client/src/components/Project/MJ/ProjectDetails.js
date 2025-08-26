@@ -512,7 +512,7 @@ const ProjectDetails = () => {
 
             {/* 결제정보 탭 */}
             {activeTab === 'payment' && (
-              <Payment project={project} />
+              <Payment project={project} user={user} />
             )}
 
             {/* 출고 정보 탭 */}
