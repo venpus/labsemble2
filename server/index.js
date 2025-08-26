@@ -9,7 +9,8 @@ const {
   createMJProjectTable, 
   createMJProjectReferenceLinksTable, 
   createMJProjectImagesTable,
-  migratePaymentColumns
+  migratePaymentColumns,
+  runAllMigrations
 } = require('./config/database');
 require('dotenv').config();
 
@@ -55,41 +56,42 @@ app.get('/api/health', (req, res) => {
 app.get('/api/migration/status', async (req, res) => {
   try {
     const { pool } = require('./config/database');
-    const connection = await pool.getConnection();
-    
-    // additional_cost_items 컬럼 존재 여부 확인
-    const [columns] = await connection.execute(`
-      SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT 
-      FROM INFORMATION_SCHEMA.COLUMNS 
-      WHERE TABLE_SCHEMA = 'labsemble' 
-      AND TABLE_NAME = 'mj_project' 
-      AND COLUMN_NAME IN ('additional_cost', 'additional_cost_description', 'additional_cost_items')
-    `);
-    
-    // 기존 데이터 확인
-    const [projects] = await connection.execute(`
+    const [projects] = await pool.execute(`
       SELECT 
         COUNT(*) as total_projects,
-        COUNT(CASE WHEN additional_cost > 0 THEN 1 END) as projects_with_legacy_cost,
-        COUNT(CASE WHEN additional_cost_items IS NOT NULL THEN 1 END) as projects_with_new_items
+        COUNT(CASE WHEN additional_cost_items IS NOT NULL THEN 1 END) as projects_with_additional_costs,
+        COUNT(CASE WHEN unit_weight IS NOT NULL THEN 1 END) as projects_with_unit_weight,
+        COUNT(CASE WHEN packaging_method IS NOT NULL THEN 1 END) as projects_with_packaging_method,
+        COUNT(CASE WHEN box_dimensions IS NOT NULL THEN 1 END) as projects_with_box_dimensions,
+        COUNT(CASE WHEN box_weight IS NOT NULL THEN 1 END) as projects_with_box_weight,
+        COUNT(CASE WHEN factory_delivery_days IS NOT NULL THEN 1 END) as projects_with_delivery_days,
+        COUNT(CASE WHEN actual_order_date IS NOT NULL THEN 1 END) as projects_with_actual_order_date,
+        COUNT(CASE WHEN expected_factory_shipping_date IS NOT NULL THEN 1 END) as projects_with_expected_shipping_date,
+        COUNT(CASE WHEN actual_factory_shipping_date IS NOT NULL THEN 1 END) as projects_with_actual_shipping_date,
+        COUNT(CASE WHEN is_order_completed = 1 THEN 1 END) as projects_with_completed_orders,
+        COUNT(CASE WHEN is_factory_shipping_completed = 1 THEN 1 END) as projects_with_completed_factory_shipping
       FROM mj_project
     `);
-    
-    connection.release();
-    
-    res.json({
-      status: 'OK',
-      columns: columns,
-      data_summary: projects[0],
-      migration_status: {
-        has_legacy_cost: projects[0].projects_with_legacy_cost > 0,
-        has_new_items: projects[0].projects_with_new_items > 0,
-        needs_migration: projects[0].projects_with_legacy_cost > 0 && projects[0].projects_with_new_items === 0
-      }
-    });
+
+    const migration_status = {
+      has_additional_costs: projects[0].projects_with_additional_costs > 0,
+      has_unit_weight: projects[0].projects_with_unit_weight > 0,
+      has_packaging_method: projects[0].projects_with_packaging_method > 0,
+      has_box_dimensions: projects[0].projects_with_box_dimensions > 0,
+      has_box_weight: projects[0].projects_with_box_weight > 0,
+      has_delivery_days: projects[0].projects_with_delivery_days > 0,
+      has_actual_order_date: projects[0].projects_with_actual_order_date > 0,
+      has_expected_shipping_date: projects[0].projects_with_expected_shipping_date > 0,
+      has_actual_shipping_date: projects[0].projects_with_actual_shipping_date > 0,
+      has_completed_orders: projects[0].projects_with_completed_orders > 0,
+      has_completed_factory_shipping: projects[0].projects_with_completed_factory_shipping > 0,
+      total_projects: projects[0].total_projects
+    };
+
+    res.json({ migration_status });
   } catch (error) {
     console.error('마이그레이션 상태 확인 오류:', error);
-    res.status(500).json({ error: '마이그레이션 상태 확인 실패', message: error.message });
+    res.status(500).json({ error: '마이그레이션 상태 확인 중 오류가 발생했습니다.' });
   }
 });
 
@@ -112,20 +114,38 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, async () => {
-  console.log(`🚀 Manufacturing server running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test`);
-  
-  // 데이터베이스 연결 테스트 및 테이블 생성
+// 서버 시작 및 데이터베이스 초기화
+const startServer = async () => {
   try {
-    await testConnection();
+    // 데이터베이스 연결 테스트
+    const isConnected = await testConnection();
+    if (!isConnected) {
+      console.error('❌ 데이터베이스 연결 실패로 서버를 시작할 수 없습니다.');
+      process.exit(1);
+    }
+
+    // 테이블 생성 및 마이그레이션 실행
+    console.log('🔧 데이터베이스 테이블 생성 및 마이그레이션 시작...');
     await createUsersTable();
     await createMJProjectTable();
     await createMJProjectReferenceLinksTable();
     await createMJProjectImagesTable();
-    await migratePaymentColumns();
+    
+    // 모든 마이그레이션 실행
+    await runAllMigrations();
+    
+    console.log('✅ 데이터베이스 초기화 완료!');
+    
+    // 서버 시작
+    app.listen(PORT, () => {
+      console.log(`🚀 Manufacturing API 서버가 포트 ${PORT}에서 실행 중입니다.`);
+      console.log(`📊 마이그레이션 상태 확인: http://localhost:${PORT}/api/migration/status`);
+    });
   } catch (error) {
-    console.error('❌ 데이터베이스 초기화 실패:', error.message);
+    console.error('❌ 서버 시작 실패:', error);
+    process.exit(1);
   }
-}); 
+};
+
+// 서버 시작
+startServer(); 

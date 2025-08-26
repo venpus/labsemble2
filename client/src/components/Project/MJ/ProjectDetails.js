@@ -12,10 +12,13 @@ import {
   Image as ImageIcon,
   User,
   Building,
-  Clock
+  Clock,
+  Truck,
+  Ship
 } from 'lucide-react';
 import ProdInfo from './Details/ProdInfo';
 import Payment from './Details/Payment';
+import Delivery from './Details/Delivery';
 
 const ProjectDetails = () => {
   const { id } = useParams();
@@ -220,46 +223,50 @@ const ProjectDetails = () => {
 
         {/* Tab Menu */}
         <div className="mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8">
+          <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+            <nav className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('basic')}
-                className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`py-3 px-4 border-2 font-medium text-sm transition-all duration-200 rounded-lg flex items-center ${
                   activeTab === 'basic'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600 bg-blue-50 shadow-sm'
+                    : 'border-gray-200 text-gray-500 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-300 bg-white'
                 }`}
               >
+                <Package className="w-4 h-4 mr-2" />
                 기본정보
               </button>
               <button
                 onClick={() => setActiveTab('payment')}
-                className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`py-3 px-4 border-2 font-medium text-sm transition-all duration-200 rounded-lg flex items-center ${
                   activeTab === 'payment'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-green-500 text-green-600 bg-green-50 shadow-sm'
+                    : 'border-gray-200 text-gray-500 hover:text-green-600 hover:bg-green-50 hover:border-green-300 bg-white'
                 }`}
               >
+                <DollarSign className="w-4 h-4 mr-2" />
                 결제정보
               </button>
               <button
                 onClick={() => setActiveTab('delivery')}
-                className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`py-3 px-4 border-2 font-medium text-sm transition-all duration-200 rounded-lg flex items-center ${
                   activeTab === 'delivery'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50 shadow-sm'
+                    : 'border-gray-200 text-gray-500 hover:text-orange-600 hover:bg-orange-50 hover:border-orange-300 bg-white'
                 }`}
               >
+                <Truck className="w-4 h-4 mr-2" />
                 납기 정보
               </button>
               <button
                 onClick={() => setActiveTab('shipping')}
-                className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`py-3 px-4 border-2 font-medium text-sm transition-all duration-200 rounded-lg flex items-center ${
                   activeTab === 'shipping'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-purple-500 text-purple-600 bg-purple-50 shadow-sm'
+                    : 'border-gray-200 text-gray-500 hover:text-purple-600 hover:bg-purple-50 hover:border-purple-300 bg-white'
                 }`}
               >
+                <Ship className="w-4 h-4 mr-2" />
                 출고 정보
               </button>
             </nav>
@@ -500,11 +507,7 @@ const ProjectDetails = () => {
 
             {/* 납기 정보 탭 */}
             {activeTab === 'delivery' && (
-              <div className="text-center py-12">
-                <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">납기 정보</h3>
-                <p className="text-gray-500">납기 관련 정보가 여기에 표시됩니다.</p>
-              </div>
+              <Delivery project={project} />
             )}
 
             {/* 결제정보 탭 */}
@@ -515,7 +518,7 @@ const ProjectDetails = () => {
             {/* 출고 정보 탭 */}
             {activeTab === 'shipping' && (
               <div className="text-center py-12">
-                <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <Ship className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">출고 정보</h3>
                 <p className="text-gray-500">출고 관련 정보가 여기에 표시됩니다.</p>
               </div>

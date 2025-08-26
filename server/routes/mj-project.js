@@ -339,32 +339,40 @@ router.patch('/:id', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: '프로젝트를 수정할 권한이 없습니다.' });
     }
     
-    // 업데이트 가능한 필드들
+    // 허용된 필드들만 업데이트
     const allowedFields = [
-      'unit_weight', 'packaging_method', 'box_dimensions', 'box_weight',
+      'unit_weight', 'packaging_method', 'box_dimensions', 'box_weight', 'factory_delivery_days',
+      'actual_order_date', 'expected_factory_shipping_date', 'actual_factory_shipping_date', 'is_order_completed',
+      'is_factory_shipping_completed',
       'project_name', 'description', 'quantity', 'target_price', 'reference_links'
     ];
-    
-    // 허용된 필드만 필터링
+
+    // 업데이트할 데이터 필터링
     const filteredData = {};
-    Object.keys(updateData).forEach(key => {
-      if (allowedFields.includes(key)) {
-        filteredData[key] = updateData[key];
+    for (const field of allowedFields) {
+      if (updateData.hasOwnProperty(field)) {
+        filteredData[field] = updateData[field];
       }
-    });
-    
-    if (Object.keys(filteredData).length === 0) {
-      return res.status(400).json({ error: '업데이트할 수 있는 필드가 없습니다.' });
     }
-    
-    // SQL 쿼리 동적 생성
-    const setClause = Object.keys(filteredData).map(key => `${key} = ?`).join(', ');
-    const values = [...Object.values(filteredData), projectId];
-    
-    await connection.execute(
-      `UPDATE mj_project SET ${setClause}, updated_at = NOW() WHERE id = ?`,
-      values
-    );
+
+    // 실제 공장 출고일이 설정되면 공장 출고 완료 상태를 true로 자동 업데이트
+    if (filteredData.actual_factory_shipping_date && filteredData.actual_factory_shipping_date !== null) {
+      filteredData.is_factory_shipping_completed = true;
+      console.log('🏭 실제 공장 출고일 설정됨, 공장 출고 완료 상태를 true로 업데이트');
+    }
+
+    // 업데이트 실행
+    if (Object.keys(filteredData).length > 0) {
+      const updateFields = Object.keys(filteredData).map(field => `${field} = ?`).join(', ');
+      const updateValues = Object.values(filteredData);
+      
+      await connection.execute(
+        `UPDATE mj_project SET ${updateFields}, updated_at = NOW() WHERE id = ?`,
+        [...updateValues, projectId]
+      );
+      
+      console.log('✅ 프로젝트 정보 업데이트 완료:', filteredData);
+    }
     
     res.json({ message: '프로젝트 정보가 성공적으로 업데이트되었습니다.' });
     
@@ -556,6 +564,7 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
   
   try {
     const projectId = req.params.id;
+    // Payment 데이터 추출
     const {
       unitPrice,
       selectedFeeRate,
@@ -572,7 +581,7 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
       additionalCostItems
     } = req.body;
 
-    // 숫자 타입으로 변환
+    // 숫자 타입으로 변환 (undefined 방지)
     const numericUnitPrice = Number(unitPrice) || 0;
     const numericSelectedFeeRate = Number(selectedFeeRate) || 0;
     const numericFactoryShippingCost = Number(factoryShippingCost) || 0;
@@ -581,6 +590,12 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
     const numericTotalAmount = Number(totalAmount) || 0;
     const numericAdvancePayment = Number(advancePayment) || 0;
     
+    // 배열 및 객체 기본값 설정 (undefined 방지)
+    const safePaymentStatus = paymentStatus || {};
+    const safePaymentDates = paymentDates || [];
+    const safePaymentDueDates = paymentDueDates || [];
+    const safeAdditionalCostItems = additionalCostItems || '[]';
+
     // 프로젝트 존재 여부 확인
     const [project] = await connection.execute(
       'SELECT * FROM mj_project WHERE id = ?',
@@ -640,6 +655,23 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
     const processedAdvanceDueDate = processDate(advanceDueDate);
     
     // Payment 데이터 업데이트
+    console.log('🏦 Payment 데이터 저장 시작:', {
+      projectId,
+      numericUnitPrice,
+      numericSelectedFeeRate,
+      safePaymentStatus,
+      safePaymentDates,
+      processedBalanceDueDate,
+      processedAdvanceDueDate,
+      safePaymentDueDates,
+      numericFactoryShippingCost,
+      numericSubtotal,
+      numericFee,
+      numericTotalAmount,
+      numericAdvancePayment,
+      safeAdditionalCostItems
+    });
+
     await connection.execute(
       `UPDATE mj_project SET 
         unit_price = ?,
@@ -660,25 +692,27 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
       [
         numericUnitPrice,
         numericSelectedFeeRate,
-        JSON.stringify(paymentStatus),
-        JSON.stringify(paymentDates),
+        JSON.stringify(safePaymentStatus),
+        JSON.stringify(safePaymentDates),
         processedBalanceDueDate,
         processedAdvanceDueDate,
-        JSON.stringify(paymentDueDates),
+        JSON.stringify(safePaymentDueDates),
         numericFactoryShippingCost,
         numericSubtotal,
         numericFee,
         numericTotalAmount,
         numericAdvancePayment,
-        additionalCostItems,
+        safeAdditionalCostItems,
         projectId
       ]
     );
     
+    console.log('✅ Payment 데이터 저장 완료');
+    
     // additional_cost_items가 있는 경우 기존 additional_cost 필드도 동기화 (하위 호환성)
-    if (additionalCostItems) {
+    if (safeAdditionalCostItems && safeAdditionalCostItems !== '[]') {
       try {
-        const items = JSON.parse(additionalCostItems);
+        const items = JSON.parse(safeAdditionalCostItems);
         if (items && items.length > 0) {
           const totalAdditionalCost = items.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
           const firstItemDescription = items[0]?.description || '';

@@ -279,6 +279,14 @@ const migratePaymentColumns = async () => {
     } catch (error) {
       // 필드가 이미 존재하는 경우 무시
     }
+    
+    // factory_delivery_days 컬럼 추가 (공장 납기소요일)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS factory_delivery_days INT DEFAULT NULL');
+      console.log('✅ factory_delivery_days 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
 
     // 제품 이미지 테이블 생성
     try {
@@ -406,6 +414,74 @@ const createMJProjectImagesTable = async () => {
   }
 };
 
+// MJ 프로젝트 테이블에 납기 일정 관련 필드 추가
+async function migrateDeliveryScheduleColumns() {
+  const connection = await pool.getConnection();
+  try {
+    console.log('🚚 납기 일정 관련 필드 마이그레이션 시작...');
+
+    // actual_order_date 컬럼 추가 (실제 발주일)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS actual_order_date DATE DEFAULT NULL');
+      console.log('✅ actual_order_date 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    // expected_factory_shipping_date 컬럼 추가 (예상 공장 출고일)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS expected_factory_shipping_date DATE DEFAULT NULL');
+      console.log('✅ expected_factory_shipping_date 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    // actual_factory_shipping_date 컬럼 추가 (실제 공장 출고일)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS actual_factory_shipping_date DATE DEFAULT NULL');
+      console.log('✅ actual_factory_shipping_date 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    // is_order_completed 컬럼 추가 (발주 완료 여부)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS is_order_completed BOOLEAN DEFAULT FALSE');
+      console.log('✅ is_order_completed 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    // is_factory_shipping_completed 컬럼 추가 (공장 출고 완료 여부)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS is_factory_shipping_completed BOOLEAN DEFAULT FALSE');
+      console.log('✅ is_factory_shipping_completed 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    console.log('🎉 납기 일정 관련 필드 마이그레이션 완료');
+  } catch (error) {
+    console.error('❌ 납기 일정 관련 필드 마이그레이션 오류:', error);
+  } finally {
+    connection.release();
+  }
+}
+
+// 모든 마이그레이션 실행
+async function runAllMigrations() {
+  try {
+    console.log('🚀 데이터베이스 마이그레이션 시작...');
+    
+    await migratePaymentColumns();
+    await migrateDeliveryScheduleColumns();
+    
+    console.log('🎉 모든 마이그레이션 완료!');
+  } catch (error) {
+    console.error('❌ 마이그레이션 실행 중 오류:', error);
+  }
+}
+
 module.exports = {
   pool,
   testConnection,
@@ -413,5 +489,6 @@ module.exports = {
   createMJProjectTable,
   createMJProjectReferenceLinksTable,
   createMJProjectImagesTable,
-  migratePaymentColumns
+  migratePaymentColumns,
+  runAllMigrations
 };
