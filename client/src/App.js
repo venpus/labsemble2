@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
@@ -11,6 +11,18 @@ import RegisterSuccess from './pages/RegisterSuccess';
 import Dashboard from './pages/Dashboard/Dashboard';
 import ProjectRegister from './components/Project/MJ/ProjectRegister';
 import './App.css';
+
+// Footer를 조건부로 렌더링하는 컴포넌트
+function ConditionalFooter() {
+  const location = useLocation();
+  
+  // 대시보드 경로인지 확인
+  const isDashboardRoute = location.pathname.startsWith('/dashboard') || 
+                          location.pathname.startsWith('/services/mj-distribution');
+  
+  // 대시보드 경로가 아닌 경우에만 Footer 표시
+  return !isDashboardRoute ? <Footer /> : null;
+}
 
 function App() {
   return (
@@ -33,7 +45,7 @@ function App() {
               <Route path="/services/mj-distribution" element={<ProjectRegister />} />
             </Routes>
           </main>
-          <Footer />
+          <ConditionalFooter />
           <Toaster position="top-right" />
         </div>
       </Router>

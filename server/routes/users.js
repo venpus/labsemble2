@@ -2,6 +2,50 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { pool } = require('../config/database');
+const jwt = require('jsonwebtoken');
+
+// JWT 토큰에서 사용자 ID 추출하는 미들웨어
+const extractUserIdFromToken = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '인증 토큰이 필요합니다.' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    console.error('토큰 검증 오류:', error);
+    return res.status(401).json({ success: false, message: '유효하지 않은 토큰입니다.' });
+  }
+};
+
+// 현재 로그인된 사용자 정보 조회
+router.get('/me', extractUserIdFromToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    const [rows] = await pool.execute(`
+      SELECT id, username, contact_person, phone, email, company_name, is_admin, partner_name, created_at, updated_at 
+      FROM users 
+      WHERE id = ?
+    `, [userId]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: '사용자를 찾을 수 없습니다.' });
+    }
+    
+    res.json({ 
+      success: true, 
+      ...rows[0]
+    });
+  } catch (error) {
+    console.error('현재 사용자 정보 조회 오류:', error);
+    res.status(500).json({ success: false, message: '사용자 정보 조회 중 오류가 발생했습니다.' });
+  }
+});
 
 // 모든 사용자 조회 (비밀번호 제외)
 router.get('/', async (req, res) => {

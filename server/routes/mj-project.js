@@ -27,6 +27,26 @@ const storage = multer.diskStorage({
   }
 });
 
+// 제품 이미지 업로드를 위한 multer 설정
+const realImageStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = 'uploads/project/mj/realImage';
+    
+    // 폴더가 없으면 생성
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    // 파일명 중복 방지를 위해 타임스탬프 추가
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'mj-real-image-' + uniqueSuffix + ext);
+  }
+});
+
 const upload = multer({ 
   storage: storage,
   limits: {
@@ -38,6 +58,21 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('이미지 파일만 업로드 가능합니다.'), false);
+    }
+  }
+});
+
+const realImageUpload = multer({ 
+  storage: realImageStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB 제한
+  },
+  fileFilter: function (req, file, cb) {
+    // 이미지와 비디오 파일 허용
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('이미지 또는 비디오 파일만 업로드 가능합니다.'), false);
     }
   }
 });
@@ -269,6 +304,249 @@ router.patch('/:id/status', async (req, res) => {
   } catch (error) {
     console.error('MJ 프로젝트 상태 업데이트 오류:', error);
     res.status(500).json({ error: '프로젝트 상태 업데이트 중 오류가 발생했습니다.' });
+  }
+});
+
+// MJ 프로젝트 정보 업데이트
+router.patch('/:id', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const projectId = req.params.id;
+    const updateData = req.body;
+    
+    // 프로젝트 존재 여부 확인
+    const [project] = await connection.execute(
+      'SELECT * FROM mj_project WHERE id = ?',
+      [projectId]
+    );
+    
+    if (project.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    // 권한 확인 (프로젝트 소유자 또는 admin만 수정 가능)
+    const [user] = await connection.execute(
+      'SELECT is_admin FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+    
+    if (user.length === 0) {
+      return res.status(401).json({ error: '사용자 인증이 필요합니다.' });
+    }
+    
+    if (!user[0].is_admin && project[0].user_id !== req.user.userId) {
+      return res.status(403).json({ error: '프로젝트를 수정할 권한이 없습니다.' });
+    }
+    
+    // 업데이트 가능한 필드들
+    const allowedFields = [
+      'unit_weight', 'packaging_method', 'box_dimensions', 'box_weight',
+      'project_name', 'description', 'quantity', 'target_price', 'reference_links'
+    ];
+    
+    // 허용된 필드만 필터링
+    const filteredData = {};
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key)) {
+        filteredData[key] = updateData[key];
+      }
+    });
+    
+    if (Object.keys(filteredData).length === 0) {
+      return res.status(400).json({ error: '업데이트할 수 있는 필드가 없습니다.' });
+    }
+    
+    // SQL 쿼리 동적 생성
+    const setClause = Object.keys(filteredData).map(key => `${key} = ?`).join(', ');
+    const values = [...Object.values(filteredData), projectId];
+    
+    await connection.execute(
+      `UPDATE mj_project SET ${setClause}, updated_at = NOW() WHERE id = ?`,
+      values
+    );
+    
+    res.json({ message: '프로젝트 정보가 성공적으로 업데이트되었습니다.' });
+    
+  } catch (error) {
+    console.error('MJ 프로젝트 정보 업데이트 오류:', error);
+    res.status(500).json({ error: '프로젝트 정보 업데이트 중 오류가 발생했습니다.' });
+  } finally {
+    connection.release();
+  }
+});
+
+// 제품 이미지/비디오 업로드
+router.post('/:id/real-images', authMiddleware, realImageUpload.array('files', 10), async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const projectId = req.params.id;
+    
+    // 프로젝트 존재 여부 확인
+    const [project] = await connection.execute(
+      'SELECT * FROM mj_project WHERE id = ?',
+      [projectId]
+    );
+    
+    if (project.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    // 권한 확인 (프로젝트 소유자 또는 admin만 수정 가능)
+    const [user] = await connection.execute(
+      'SELECT is_admin FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+    
+    if (user.length === 0) {
+      return res.status(401).json({ error: '사용자 인증이 필요합니다.' });
+    }
+    
+    if (!user[0].is_admin && project[0].user_id !== req.user.userId) {
+      return res.status(403).json({ error: '프로젝트를 수정할 권한이 없습니다.' });
+    }
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: '업로드할 파일이 없습니다.' });
+    }
+    
+    // 업로드된 파일 정보 수집
+    const uploadedFiles = req.files.map(file => ({
+      original_name: file.originalname,
+      file_path: file.path,
+      file_size: file.size,
+      mime_type: file.mimetype,
+      project_id: projectId
+    }));
+    
+    // 데이터베이스에 파일 정보 저장
+    for (const fileInfo of uploadedFiles) {
+      await connection.execute(
+        'INSERT INTO mj_project_real_images (original_name, file_path, file_size, mime_type, project_id) VALUES (?, ?, ?, ?, ?)',
+        [fileInfo.original_name, fileInfo.file_path, fileInfo.file_size, fileInfo.mime_type, fileInfo.project_id]
+      );
+    }
+    
+    res.json({ 
+      message: `${uploadedFiles.length}개 파일이 성공적으로 업로드되었습니다.`,
+      files: uploadedFiles
+    });
+    
+  } catch (error) {
+    console.error('제품 이미지 업로드 오류:', error);
+    res.status(500).json({ error: '제품 이미지 업로드 중 오류가 발생했습니다.' });
+  } finally {
+    connection.release();
+  }
+});
+
+// 제품 이미지/비디오 조회
+router.get('/:id/real-images', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const projectId = req.params.id;
+    
+    // 프로젝트 존재 여부 확인
+    const [project] = await connection.execute(
+      'SELECT * FROM mj_project WHERE id = ?',
+      [projectId]
+    );
+    
+    if (project.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    // 권한 확인 (프로젝트 소유자 또는 admin만 조회 가능)
+    const [user] = await connection.execute(
+      'SELECT is_admin FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+    
+    if (user.length === 0) {
+      return res.status(401).json({ error: '사용자 인증이 필요합니다.' });
+    }
+    
+    if (!user[0].is_admin && project[0].user_id !== req.user.userId) {
+      return res.status(403).json({ error: '프로젝트를 조회할 권한이 없습니다.' });
+    }
+    
+    // 프로젝트의 모든 이미지/비디오 조회
+    const [files] = await connection.execute(
+      'SELECT * FROM mj_project_real_images WHERE project_id = ? ORDER BY created_at DESC',
+      [projectId]
+    );
+    
+    res.json({ files });
+    
+  } catch (error) {
+    console.error('제품 이미지 조회 오류:', error);
+    res.status(500).json({ error: '제품 이미지 조회 중 오류가 발생했습니다.' });
+  } finally {
+    connection.release();
+  }
+});
+
+// 제품 이미지/비디오 삭제
+router.delete('/:id/real-images/:imageId', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const { id: projectId, imageId } = req.params;
+    
+    // 프로젝트 존재 여부 확인
+    const [project] = await connection.execute(
+      'SELECT * FROM mj_project WHERE id = ?',
+      [projectId]
+    );
+    
+    if (project.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    // 권한 확인 (프로젝트 소유자 또는 admin만 수정 가능)
+    const [user] = await connection.execute(
+      'SELECT is_admin FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+    
+    if (user.length === 0) {
+      return res.status(401).json({ error: '사용자 인증이 필요합니다.' });
+    }
+    
+    if (!user[0].is_admin && project[0].user_id !== req.user.userId) {
+      return res.status(403).json({ error: '프로젝트를 수정할 권한이 없습니다.' });
+    }
+    
+    // 이미지 정보 조회
+    const [image] = await connection.execute(
+      'SELECT * FROM mj_project_real_images WHERE id = ? AND project_id = ?',
+      [imageId, projectId]
+    );
+    
+    if (image.length === 0) {
+      return res.status(404).json({ error: '이미지를 찾을 수 없습니다.' });
+    }
+    
+    // 파일 시스템에서 파일 삭제
+    if (fs.existsSync(image[0].file_path)) {
+      fs.unlinkSync(image[0].file_path);
+    }
+    
+    // 데이터베이스에서 이미지 정보 삭제
+    await connection.execute(
+      'DELETE FROM mj_project_real_images WHERE id = ?',
+      [imageId]
+    );
+    
+    res.json({ message: '이미지가 성공적으로 삭제되었습니다.' });
+    
+  } catch (error) {
+    console.error('제품 이미지 삭제 오류:', error);
+    res.status(500).json({ error: '제품 이미지 삭제 중 오류가 발생했습니다.' });
+  } finally {
+    connection.release();
   }
 });
 

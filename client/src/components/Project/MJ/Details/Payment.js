@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { DollarSign, Package, Calculator, Truck, Save } from 'lucide-react';
+import { DollarSign, Package, Calculator, Truck, Save, Lock } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
 const Payment = ({ project }) => {
+  // admin 권한 상태
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminLoading, setIsAdminLoading] = useState(true);
+
   // 날짜 형식 처리 유틸리티 함수
   const formatDateForDB = (dateValue) => {
     if (!dateValue || dateValue === '') {
@@ -96,6 +100,11 @@ const Payment = ({ project }) => {
   
   // 수수료 비율 변경 시
   const handleFeeRateChange = (rate) => {
+    if (!isAdmin) {
+      toast.error('admin 권한이 필요합니다.');
+      return;
+    }
+
     // 현재 선택된 수수료율과 다른 경우에만 처리
     if (rate === selectedFeeRate) {
       return; // 이미 선택된 값이면 무시
@@ -120,6 +129,11 @@ const Payment = ({ project }) => {
   
   // 결제 여부 변경 시
   const handlePaymentStatusChange = async (type) => {
+    if (!isAdmin) {
+      toast.error('admin 권한이 필요합니다.');
+      return;
+    }
+
     const newStatus = !paymentStatus[type];
     
     // 상태 업데이트
@@ -199,6 +213,43 @@ const Payment = ({ project }) => {
     }
   };
   
+  // 컴포넌트 마운트 시 admin 권한 확인 및 기존 데이터 설정
+  useEffect(() => {
+    // admin 권한 확인
+    const checkAdminStatus = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.log('🔑 토큰이 없습니다.');
+          setIsAdmin(false);
+          setIsAdminLoading(false);
+          return;
+        }
+
+        console.log('🔍 Admin 권한 확인 중...');
+        const response = await axios.get('/api/users/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        console.log('👤 사용자 정보:', response.data);
+        const adminStatus = response.data.is_admin || false;
+        console.log('👑 Admin 권한:', adminStatus);
+        
+        setIsAdmin(adminStatus);
+      } catch (error) {
+        console.error('❌ Admin 권한 확인 오류:', error);
+        setIsAdmin(false);
+      } finally {
+        setIsAdminLoading(false);
+        console.log('✅ Admin 권한 확인 완료. isAdmin:', isAdmin, 'isAdminLoading:', false);
+      }
+    };
+
+    checkAdminStatus();
+  }, []);
+
   // 컴포넌트 마운트 시 기존 데이터 설정
   useEffect(() => {
     // 수수료율 설정 (기존 저장된 값 또는 기본값 0%) - 초기 로딩 시에만
@@ -660,6 +711,11 @@ const Payment = ({ project }) => {
 
   // 단가 변경 시 자동 저장
   const handleUnitPriceChange = async (newUnitPrice) => {
+    if (!isAdmin) {
+      toast.error('admin 권한이 필요합니다.');
+      return;
+    }
+
     setEditableUnitPrice(newUnitPrice);
     
     // 단가가 변경되면 자동으로 DB에 저장
@@ -803,13 +859,15 @@ const Payment = ({ project }) => {
           
           <div className="flex items-center space-x-4">
             {/* 저장 버튼 */}
-            <button
-              onClick={handleSavePayment}
-              className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
-            >
-              <Save className="w-4 h-4 mr-2" />
-              저장
-            </button>
+            {!isAdminLoading && isAdmin && (
+              <button
+                onClick={handleSavePayment}
+                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                저장
+              </button>
+            )}
             
             {/* 결제 상태 정보 */}
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
@@ -848,6 +906,16 @@ const Payment = ({ project }) => {
 
       {/* 결제 상세 테이블 */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        {!isAdminLoading && !isAdmin && (
+          <div className="p-4 bg-yellow-50 border-b border-yellow-200">
+            <div className="flex items-center">
+              <Lock className="w-4 h-4 mr-2 text-yellow-600" />
+              <span className="text-sm text-yellow-800">
+                결제 정보 수정은 admin 권한이 필요합니다. 현재 읽기 전용 모드입니다.
+              </span>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <tbody className="bg-white divide-y divide-gray-200">
@@ -872,14 +940,22 @@ const Payment = ({ project }) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <div className="text-sm font-semibold text-gray-900">
-                    <input
-                      type="number"
-                      value={editableUnitPrice}
-                      onChange={(e) => handleUnitPriceChange(Number(e.target.value) || 0)}
-                      className="w-24 px-2 py-1 text-right border border-gray-300 rounded bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      min="0"
-                      step="0.1"
-                    />
+                    {!isAdminLoading && isAdmin ? (
+                      <input
+                        type="number"
+                        value={editableUnitPrice}
+                        onChange={(e) => handleUnitPriceChange(Number(e.target.value) || 0)}
+                        className="w-24 px-2 py-1 text-right border border-gray-300 rounded bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        min="0"
+                        step="0.1"
+                      />
+                    ) : !isAdminLoading ? (
+                      <span className="text-sm text-gray-900">
+                        ¥{editableUnitPrice.toLocaleString()}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-400">권한 확인 중...</span>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -919,17 +995,25 @@ const Payment = ({ project }) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <div className="text-sm font-semibold text-gray-900">
-                    <input
-                      type="number"
-                      value={editableShippingCost}
-                      onChange={(e) => {
-                        const newValue = Number(e.target.value) || 0;
-                        setEditableShippingCost(newValue);
-                      }}
-                      className="w-24 px-2 py-1 text-right border border-gray-300 rounded bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                      min="0"
-                      step="0.01"
-                    />
+                    {!isAdminLoading && isAdmin ? (
+                      <input
+                        type="number"
+                        value={editableShippingCost}
+                        onChange={(e) => {
+                          const newValue = Number(e.target.value) || 0;
+                          setEditableShippingCost(newValue);
+                        }}
+                        className="w-24 px-2 py-1 text-right border border-gray-300 rounded bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        min="0"
+                        step="0.01"
+                      />
+                    ) : !isAdminLoading ? (
+                      <span className="text-sm text-gray-900">
+                        ¥{editableShippingCost.toLocaleString()}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-400">권한 확인 중...</span>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -944,26 +1028,34 @@ const Payment = ({ project }) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex flex-wrap gap-3">
-                    {feeRateOptions.map((rate) => (
-                      <label key={rate} className="flex items-center cursor-pointer p-2 rounded hover:bg-orange-50 transition-colors">
-                        <input
-                          type="radio"
-                          name="feeRate"
-                          value={rate}
-                          checked={selectedFeeRate === rate}
-                          onChange={(e) => handleFeeRateChange(Number(e.target.value))}
-                          className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500 focus:ring-2 cursor-pointer"
-                          id={`feeRate-${rate}`}
-                        />
-                        <span className={`ml-2 text-sm select-none ${
-                          selectedFeeRate === rate 
-                            ? 'text-orange-700 font-semibold' 
-                            : 'text-gray-900'
-                        }`}>
-                          {rate}%
-                        </span>
-                      </label>
-                    ))}
+                    {!isAdminLoading && isAdmin ? (
+                      feeRateOptions.map((rate) => (
+                        <label key={rate} className="flex items-center cursor-pointer p-2 rounded hover:bg-orange-50 transition-colors">
+                          <input
+                            type="radio"
+                            name="feeRate"
+                            value={rate}
+                            checked={selectedFeeRate === rate}
+                            onChange={(e) => handleFeeRateChange(Number(e.target.value))}
+                            className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500 focus:ring-2 cursor-pointer"
+                            id={`feeRate-${rate}`}
+                          />
+                          <span className={`ml-2 text-sm select-none ${
+                            selectedFeeRate === rate 
+                              ? 'text-orange-700 font-semibold' 
+                              : 'text-gray-900'
+                          }`}>
+                            {rate}%
+                          </span>
+                        </label>
+                      ))
+                    ) : !isAdminLoading ? (
+                      <span className="text-sm text-gray-900 px-3 py-2">
+                        {selectedFeeRate}%
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-400 px-3 py-2">권한 확인 중...</span>
+                    )}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -992,26 +1084,32 @@ const Payment = ({ project }) => {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <button
-                    onClick={() => {
-                      if (additionalCostItems.length < 5) {
-                        const newId = additionalCostItems.length > 0 
-                          ? Math.max(...additionalCostItems.map(item => item.id)) + 1 
-                          : 1;
-                        setAdditionalCostItems(prev => [...prev, { id: newId, cost: 0, description: '' }]);
-                      } else {
-                        toast.error('최대 5개까지만 추가할 수 있습니다.');
-                      }
-                    }}
-                    disabled={additionalCostItems.length >= 5}
-                    className={`px-3 py-1 text-xs rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
-                      additionalCostItems.length >= 5
-                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
-                    }`}
-                  >
-                    {additionalCostItems.length >= 5 ? '최대 항목 수 도달' : '추가 비용 항목 추가'}
-                  </button>
+                  {!isAdminLoading && isAdmin ? (
+                    <button
+                      onClick={() => {
+                        if (additionalCostItems.length < 5) {
+                          const newId = additionalCostItems.length > 0 
+                            ? Math.max(...additionalCostItems.map(item => item.id)) + 1 
+                            : 1;
+                          setAdditionalCostItems(prev => [...prev, { id: newId, cost: 0, description: '' }]);
+                        } else {
+                          toast.error('최대 5개까지만 추가할 수 있습니다.');
+                        }
+                      }}
+                      disabled={additionalCostItems.length >= 5}
+                      className={`px-3 py-1 text-xs rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
+                        additionalCostItems.length >= 5
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
+                      }`}
+                    >
+                      {additionalCostItems.length >= 5 ? '최대 항목 수 도달' : '추가 비용 항목 추가'}
+                    </button>
+                  ) : !isAdminLoading ? (
+                    <span className="text-sm text-gray-500">관리자 전용</span>
+                  ) : (
+                    <span className="text-sm text-gray-400">권한 확인 중...</span>
+                  )}
                 </td>
               </tr>
 
@@ -1024,69 +1122,87 @@ const Payment = ({ project }) => {
                       <span className="text-sm font-medium text-gray-900">추가 비용 {index + 1}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        placeholder="비용 설명 입력..."
-                        value={item.description}
-                        onChange={(e) => {
-                          const newItems = [...additionalCostItems];
-                          newItems[index].description = e.target.value;
-                          setAdditionalCostItems(newItems);
-                        }}
-                        onFocus={() => setIsAdditionalCostFocused(true)}
-                        onBlur={() => {
-                          setIsAdditionalCostFocused(false);
-                          // 포커스가 해제되면 즉시 저장
-                          if (item.description !== '' && project.additional_cost_items?.[index]?.description !== item.description) {
-                            saveAdditionalCostItemsToDB(additionalCostItems);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.target.blur(); // 포커스 해제하여 onBlur 트리거
-                          }
-                        }}
-                        className="w-64 px-3 py-2 text-sm border border-gray-300 rounded-md bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-                      />
+                      {!isAdminLoading && isAdmin ? (
+                        <input
+                          type="text"
+                          placeholder="비용 설명 입력..."
+                          value={item.description}
+                          onChange={(e) => {
+                            const newItems = [...additionalCostItems];
+                            newItems[index].description = e.target.value;
+                            setAdditionalCostItems(newItems);
+                          }}
+                          onFocus={() => setIsAdditionalCostFocused(true)}
+                          onBlur={() => {
+                            setIsAdditionalCostFocused(false);
+                            // 포커스가 해제되면 즉시 저장
+                            if (item.description !== '' && project.additional_cost_items?.[index]?.description !== item.description) {
+                              saveAdditionalCostItemsToDB(additionalCostItems);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.target.blur(); // 포커스 해제하여 onBlur 트리거
+                            }
+                          }}
+                          className="w-64 px-3 py-2 text-sm border border-gray-300 rounded-md bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        />
+                      ) : !isAdminLoading ? (
+                        <span className="text-sm text-gray-900 px-3 py-2">
+                          {item.description || '-'}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400 px-3 py-2">권한 확인 중...</span>
+                      )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                  <td className="px-3 py-4 whitespace-nowrap text-right">
                     <div className="flex items-center justify-end space-x-2">
-                      <input
-                        type="number"
-                        value={item.cost}
-                        onChange={(e) => {
-                          const newItems = [...additionalCostItems];
-                          newItems[index].cost = Number(e.target.value) || 0;
-                          setAdditionalCostItems(newItems);
-                        }}
-                        onFocus={() => setIsAdditionalCostFocused(true)}
-                        onBlur={() => {
-                          setIsAdditionalCostFocused(false);
-                          // 포커스가 해제되면 즉시 저장
-                          if (item.cost !== 0 && project.additional_cost_items?.[index]?.cost !== item.cost) {
-                            saveAdditionalCostItemsToDB(additionalCostItems);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.target.blur(); // 포커스 해제하여 onBlur 트리거
-                          }
-                        }}
-                        className="w-24 px-2 py-1 text-right border border-gray-300 rounded bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                        min="0"
-                        step="0.01"
-                      />
-                      <button
-                        onClick={() => {
-                          setAdditionalCostItems(prev => prev.filter(i => i.id !== item.id));
-                        }}
-                        className="px-2 py-1 text-xs bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
-                      >
-                        삭제
-                      </button>
+                      {!isAdminLoading && isAdmin ? (
+                        <input
+                          type="number"
+                          value={item.cost}
+                          onChange={(e) => {
+                            const newItems = [...additionalCostItems];
+                            newItems[index].cost = Number(e.target.value) || 0;
+                            setAdditionalCostItems(newItems);
+                          }}
+                          onFocus={() => setIsAdditionalCostFocused(true)}
+                          onBlur={() => {
+                            setIsAdditionalCostFocused(false);
+                            // 포커스가 해제되면 즉시 저장
+                            if (item.cost !== 0 && project.additional_cost_items?.[index]?.cost !== item.cost) {
+                              saveAdditionalCostItemsToDB(additionalCostItems);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.target.blur(); // 포커스 해제하여 onBlur 트리거
+                            }
+                          }}
+                          className="w-24 px-2 py-1 text-right border border-gray-300 rounded bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                          min="0"
+                          step="0.01"
+                        />
+                      ) : !isAdminLoading ? (
+                        <span className="text-sm text-gray-900 px-2 py-1">
+                          ¥{item.cost.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400 px-2 py-1">권한 확인 중...</span>
+                      )}
+                      {!isAdminLoading && isAdmin && (
+                        <button
+                          onClick={() => {
+                            setAdditionalCostItems(prev => prev.filter(i => i.id !== item.id));
+                          }}
+                          className="px-2 py-1 text-xs bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                        >
+                          삭제
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

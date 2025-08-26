@@ -250,7 +250,55 @@ const migratePaymentColumns = async () => {
     } catch (error) {
       console.error('❌ 추가 비용 데이터 마이그레이션 실패:', error.message);
     }
-    
+
+    // 제품 정보 필드들 추가
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS unit_weight DECIMAL(10,2) DEFAULT NULL');
+      console.log('✅ unit_weight 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS packaging_method VARCHAR(200) DEFAULT NULL');
+      console.log('✅ packaging_method 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS box_dimensions VARCHAR(100) DEFAULT NULL');
+      console.log('✅ box_dimensions 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS box_weight DECIMAL(10,2) DEFAULT NULL');
+      console.log('✅ box_weight 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    // 제품 이미지 테이블 생성
+    try {
+      await connection.execute(`
+        CREATE TABLE IF NOT EXISTS mj_project_real_images (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          original_name VARCHAR(255) NOT NULL,
+          file_path VARCHAR(500) NOT NULL,
+          file_size INT NOT NULL,
+          mime_type VARCHAR(100) NOT NULL,
+          project_id INT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES mj_project(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log('✅ mj_project_real_images 테이블 생성/확인 완료');
+    } catch (error) {
+      console.error('❌ mj_project_real_images 테이블 생성 실패:', error.message);
+    }
+
     connection.release();
   } catch (error) {
     console.error('❌ Payment 컬럼 마이그레이션 실패:', error.message);
