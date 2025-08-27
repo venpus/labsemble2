@@ -6,6 +6,7 @@ import Partners from './Admin/Partners';
 import UserManage from './Admin/UserManage';
 import ProjectLists from '../../components/Project/MJ/ProjectLists';
 import ProjectDetails from '../../components/Project/MJ/ProjectDetails';
+import { MJCalendar } from '../../components/Calendar';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -25,6 +26,8 @@ const Dashboard = () => {
       setSelectedMenu('mj-project-details');
     } else if (path.includes('/mj-projects')) {
       setSelectedMenu('mj-projects');
+    } else if (path.includes('/mj-calendar')) {
+      setSelectedMenu('mj-calendar');
     } else {
       setSelectedMenu('dashboard');
     }
@@ -40,6 +43,8 @@ const Dashboard = () => {
         return <ProjectLists />;
       case 'mj-project-details':
         return <ProjectDetails />;
+      case 'mj-calendar':
+        return <MJCalendar />;
       case 'admin-dashboard':
         return (
           <div className="p-6">
