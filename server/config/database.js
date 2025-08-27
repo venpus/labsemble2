@@ -15,7 +15,17 @@ const pool = mysql.createPool({
   writeTimeout: 60000,
   idleTimeout: 60000,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+  keepAliveInitialDelay: 0,
+  // 연결 안정성 향상을 위한 추가 설정
+  multipleStatements: false,
+  dateStrings: true,
+  timezone: '+09:00', // 한국 시간대 설정
+  // 재연결 설정
+  reconnect: true,
+  // 연결 풀 모니터링
+  connectionLimit: 10,
+  acquireTimeout: 60000,
+  timeout: 60000
 });
 
 // 연결 테스트 함수
@@ -27,9 +37,39 @@ const testConnection = async () => {
     return true;
   } catch (error) {
     console.error('❌ MariaDB 연결 실패:', error.message);
+    
+    // 연결 오류 상세 정보 로깅
+    if (error.code === 'ECONNRESET') {
+      console.error('🔌 연결이 재설정되었습니다. 재연결을 시도합니다.');
+    } else if (error.code === 'PROTOCOL_CONNECTION_LOST') {
+      console.error('🔌 연결이 끊어졌습니다. 재연결을 시도합니다.');
+    } else if (error.code === 'ER_CON_COUNT_ERROR') {
+      console.error('🔌 연결 수가 제한을 초과했습니다.');
+    }
+    
     return false;
   }
 };
+
+// 연결 풀 이벤트 리스너 추가
+pool.on('connection', (connection) => {
+  console.log('🔌 새로운 데이터베이스 연결 생성');
+});
+
+pool.on('acquire', (connection) => {
+  console.log('🔌 연결 획득');
+});
+
+pool.on('release', (connection) => {
+  console.log('🔌 연결 해제');
+});
+
+pool.on('error', (err) => {
+  console.error('❌ 데이터베이스 풀 오류:', err);
+  if (err.code === 'ECONNRESET') {
+    console.error('🔌 연결 재설정 오류 발생');
+  }
+});
 
 // 사용자 테이블 생성 및 마이그레이션 함수
 const createUsersTable = async () => {
@@ -456,6 +496,14 @@ async function migrateDeliveryScheduleColumns() {
     try {
       await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS is_factory_shipping_completed BOOLEAN DEFAULT FALSE');
       console.log('✅ is_factory_shipping_completed 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    // delivery_status 컬럼 추가 (납기 상태)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS delivery_status VARCHAR(50) DEFAULT NULL');
+      console.log('✅ delivery_status 필드 추가/확인 완료');
     } catch (error) {
       // 필드가 이미 존재하는 경우 무시
     }

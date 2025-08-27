@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import ProdInfo from './Details/ProdInfo';
 import Payment from './Details/Payment';
-import Delivery from './Details/Delivery';
+import { Delivery } from './Details/Delivery';
 
 const ProjectDetails = () => {
   const { id } = useParams();

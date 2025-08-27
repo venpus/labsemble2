@@ -256,6 +256,19 @@ router.get('/:id', async (req, res) => {
     
     const project = projects[0];
     
+    // Delivery 관련 필드 로깅
+    console.log('📊 프로젝트 조회 - Delivery 필드 확인:', {
+      id: project.id,
+      project_name: project.project_name,
+      is_order_completed: project.is_order_completed,
+      actual_order_date: project.actual_order_date,
+      expected_factory_shipping_date: project.expected_factory_shipping_date,
+      is_factory_shipping_completed: project.is_factory_shipping_completed,
+      actual_factory_shipping_date: project.actual_factory_shipping_date,
+      delivery_status: project.delivery_status,
+      factory_delivery_days: project.factory_delivery_days
+    });
+    
     // 참고링크 조회
     const [links] = await pool.execute(
       'SELECT * FROM mj_project_reference_links WHERE project_id = ?',
@@ -553,6 +566,201 @@ router.delete('/:id/real-images/:imageId', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('제품 이미지 삭제 오류:', error);
     res.status(500).json({ error: '제품 이미지 삭제 중 오류가 발생했습니다.' });
+  } finally {
+    connection.release();
+  }
+});
+
+// Delivery 데이터 저장
+router.post('/:id/delivery', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const projectId = req.params.id;
+    
+    // Delivery 데이터 추출
+    const {
+      isOrderCompleted,
+      actualOrderDate,
+      expectedFactoryShippingDate,
+      isFactoryShippingCompleted,
+      actualFactoryShippingDate,
+      deliveryStatus
+    } = req.body;
+
+    console.log('📥 받은 Delivery 데이터:', {
+      isOrderCompleted,
+      actualOrderDate,
+      expectedFactoryShippingDate,
+      isFactoryShippingCompleted,
+      actualFactoryShippingDate,
+      deliveryStatus
+    });
+
+    // 프로젝트 존재 여부 확인
+    const [project] = await connection.execute(
+      'SELECT * FROM mj_project WHERE id = ?',
+      [projectId]
+    );
+    
+    if (project.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    // 권한 확인 (admin만 수정 가능)
+    const [user] = await connection.execute(
+      'SELECT is_admin FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+    
+    if (user.length === 0) {
+      return res.status(401).json({ error: '사용자 인증이 필요합니다.' });
+    }
+    
+    if (!user[0].is_admin) {
+      return res.status(403).json({ error: 'Delivery 데이터 수정은 admin 권한이 필요합니다.' });
+    }
+
+    // 날짜 형식 처리 함수 - Timezone 문제 해결
+    const processDate = (dateValue) => {
+      if (!dateValue || dateValue === '') {
+        return null;
+      }
+      
+      try {
+        // 이미 YYYY-MM-DD 형식인 경우 그대로 사용 (Frontend에서 한국 시간대로 전송)
+        if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+          console.log('📅 YYYY-MM-DD 형식 날짜 처리:', dateValue);
+          return dateValue;
+        }
+        
+        // ISO 문자열인 경우 한국 시간대로 처리
+        if (typeof dateValue === 'string' && dateValue.includes('T')) {
+          const date = new Date(dateValue);
+          if (isNaN(date.getTime())) {
+            console.log('❌ 유효하지 않은 날짜:', dateValue);
+            return null;
+          }
+          
+          // 한국 시간대(KST)로 변환하여 YYYY-MM-DD 형식 반환
+          const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+          const result = kstDate.toISOString().split('T')[0];
+          console.log('🌏 ISO 문자열 날짜 변환:', { 원본: dateValue, 결과: result });
+          return result;
+        }
+        
+        // Date 객체인 경우
+        if (dateValue instanceof Date) {
+          if (isNaN(dateValue.getTime())) {
+            console.log('❌ 유효하지 않은 Date 객체:', dateValue);
+            return null;
+          }
+          // 한국 시간대로 변환
+          const kstDate = new Date(dateValue.getTime() + (9 * 60 * 60 * 1000));
+          const result = kstDate.toISOString().split('T')[0];
+          console.log('🌏 Date 객체 날짜 변환:', { 원본: dateValue.toISOString(), 결과: result });
+          return result;
+        }
+        
+        console.log('❓ 알 수 없는 날짜 형식:', dateValue, typeof dateValue);
+        return null;
+      } catch (error) {
+        console.error('날짜 변환 오류:', error);
+        return null;
+      }
+    };
+
+    // 날짜 데이터 처리
+    const processedActualOrderDate = processDate(actualOrderDate);
+    const processedExpectedFactoryShippingDate = processDate(expectedFactoryShippingDate);
+    const processedActualFactoryShippingDate = processDate(actualFactoryShippingDate);
+
+    console.log('📅 Delivery 데이터 처리:', {
+      isOrderCompleted,
+      actualOrderDate,
+      processedActualOrderDate,
+      expectedFactoryShippingDate,
+      processedExpectedFactoryShippingDate,
+      isFactoryShippingCompleted,
+      actualFactoryShippingDate,
+      processedActualFactoryShippingDate
+    });
+
+    // Delivery 데이터 업데이트 - 부분 업데이트 지원
+    let updateFields = [];
+    let updateValues = [];
+    
+    // 각 필드가 undefined가 아닌 경우에만 업데이트
+    if (isOrderCompleted !== undefined) {
+      updateFields.push('is_order_completed = ?');
+      updateValues.push(isOrderCompleted);
+    }
+    
+    if (processedActualOrderDate !== undefined) {
+      updateFields.push('actual_order_date = ?');
+      updateValues.push(processedActualOrderDate);
+    }
+    
+    if (processedExpectedFactoryShippingDate !== undefined) {
+      updateFields.push('expected_factory_shipping_date = ?');
+      updateValues.push(processedExpectedFactoryShippingDate);
+    }
+    
+    if (isFactoryShippingCompleted !== undefined) {
+      updateFields.push('is_factory_shipping_completed = ?');
+      updateValues.push(isFactoryShippingCompleted);
+    }
+    
+    if (processedActualFactoryShippingDate !== undefined) {
+      updateFields.push('actual_factory_shipping_date = ?');
+      updateValues.push(processedActualFactoryShippingDate);
+    }
+    
+    if (deliveryStatus !== undefined) {
+      updateFields.push('delivery_status = ?');
+      updateValues.push(deliveryStatus);
+    }
+    
+    // updated_at은 항상 업데이트
+    updateFields.push('updated_at = NOW()');
+    
+    // projectId 추가
+    updateValues.push(projectId);
+    
+    if (updateFields.length > 1) { // updated_at + projectId 외에 다른 필드가 있는 경우
+      const updateSQL = `UPDATE mj_project SET ${updateFields.join(', ')} WHERE id = ?`;
+      console.log('🔧 부분 업데이트 SQL:', updateSQL);
+      console.log('🔧 업데이트 값:', updateValues);
+      
+      await connection.execute(updateSQL, updateValues);
+    } else {
+      console.log('⚠️ 업데이트할 필드가 없습니다.');
+    }
+    
+    console.log('✅ Delivery 데이터 저장 완료');
+    
+    // 저장된 데이터 확인
+    const [savedProject] = await connection.execute(
+      'SELECT is_order_completed, actual_order_date, expected_factory_shipping_date, is_factory_shipping_completed, actual_factory_shipping_date, delivery_status FROM mj_project WHERE id = ?',
+      [projectId]
+    );
+    
+    if (savedProject.length > 0) {
+      console.log('🔍 저장된 데이터 확인:', {
+        is_order_completed: savedProject[0].is_order_completed,
+        actual_order_date: savedProject[0].actual_order_date,
+        expected_factory_shipping_date: savedProject[0].expected_factory_shipping_date,
+        is_factory_shipping_completed: savedProject[0].is_factory_shipping_completed,
+        actual_factory_shipping_date: savedProject[0].actual_factory_shipping_date,
+        delivery_status: savedProject[0].delivery_status
+      });
+    }
+    
+    res.json({ message: 'Delivery 데이터가 성공적으로 저장되었습니다.' });
+    
+  } catch (error) {
+    console.error('Delivery 데이터 저장 오류:', error);
+    res.status(500).json({ error: 'Delivery 데이터 저장 중 오류가 발생했습니다.' });
   } finally {
     connection.release();
   }
