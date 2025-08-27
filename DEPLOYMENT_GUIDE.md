@@ -242,7 +242,7 @@ module.exports = {
     script: 'server/index.js',
     instances: 'max',
     exec_mode: 'cluster',
-    cwd: '/var/www/labsemble/server',
+    cwd: '/var/www/labsemble',
     env: {
       NODE_ENV: 'production',
       PORT: 5000
