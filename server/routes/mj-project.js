@@ -344,7 +344,7 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     // 허용된 필드들만 업데이트
     const allowedFields = [
       'unit_weight', 'packaging_method', 'box_dimensions', 'box_weight', 'factory_delivery_days',
-      'actual_order_date', 'expected_factory_shipping_date', 'actual_factory_shipping_date', 'is_order_completed',
+      'supplier_name', 'actual_order_date', 'expected_factory_shipping_date', 'actual_factory_shipping_date', 'is_order_completed',
       'is_factory_shipping_completed', 'factory_shipping_status',
       'project_name', 'description', 'quantity', 'target_price', 'reference_links'
     ];

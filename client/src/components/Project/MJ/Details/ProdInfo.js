@@ -14,6 +14,7 @@ const ProdInfo = ({ project }) => {
   const [editablePackagingMethod, setEditablePackagingMethod] = useState(project.packaging_method || '');
   const [editableBoxDimensions, setEditableBoxDimensions] = useState(project.box_dimensions || '');
   const [editableBoxWeight, setEditableBoxWeight] = useState(project.box_weight || '');
+  const [editableSupplierName, setEditableSupplierName] = useState(project.supplier_name || '');
   const [editableFactoryDeliveryDays, setEditableFactoryDeliveryDays] = useState(project.factory_delivery_days || '');
 
   // 입력 중 상태 (자동 저장 방지용)
@@ -21,6 +22,7 @@ const ProdInfo = ({ project }) => {
   const [isPackagingMethodFocused, setIsPackagingMethodFocused] = useState(false);
   const [isBoxDimensionsFocused, setIsBoxDimensionsFocused] = useState(false);
   const [isBoxWeightFocused, setIsBoxWeightFocused] = useState(false);
+  const [isSupplierNameFocused, setIsSupplierNameFocused] = useState(false);
   const [isFactoryDeliveryDaysFocused, setIsFactoryDeliveryDaysFocused] = useState(false);
 
   // 컴포넌트 마운트 시 admin 권한 확인 및 기존 파일들 불러오기
@@ -87,6 +89,7 @@ const ProdInfo = ({ project }) => {
         packaging_method: project.packaging_method,
         box_dimensions: project.box_dimensions,
         box_weight: project.box_weight,
+        supplier_name: project.supplier_name,
         factory_delivery_days: project.factory_delivery_days
       });
       
@@ -94,8 +97,10 @@ const ProdInfo = ({ project }) => {
       setEditablePackagingMethod(project.packaging_method || '');
       setEditableBoxDimensions(project.box_dimensions || '');
       setEditableBoxWeight(project.box_weight || '');
+      setEditableSupplierName(project.supplier_name || '');
       setEditableFactoryDeliveryDays(project.factory_delivery_days || '');
       
+      console.log('✅ 공급자 이름 상태 설정:', project.supplier_name || '');
       console.log('✅ 공장납기소요일 상태 설정:', project.factory_delivery_days || '');
     }
   }, [project]);
@@ -426,6 +431,43 @@ const ProdInfo = ({ project }) => {
               </td>
             </tr>
             <tr className="hover:bg-gray-50">
+              <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900 bg-gray-50 border-r border-gray-200" style={{width: '12.5%'}}>
+                <div className="flex items-center">
+                  <div className="w-4 h-4 mr-2 rounded-full bg-indigo-600"></div>
+                  공급자 이름
+                </div>
+              </td>
+              <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200" style={{width: '12.5%'}}>
+                {isAdmin ? (
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={editableSupplierName}
+                      onChange={(e) => setEditableSupplierName(e.target.value)}
+                      onFocus={() => setIsSupplierNameFocused(true)}
+                      onBlur={() => {
+                        setIsSupplierNameFocused(false);
+                        if (editableSupplierName !== project.supplier_name) {
+                          saveProductInfoToDB('supplier_name', editableSupplierName);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.target.blur();
+                        }
+                      }}
+                      placeholder="공급자명 입력"
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-900">
+                      {editableSupplierName || '-'}
+                    </span>
+                  </div>
+                )}
+              </td>
               <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900 bg-gray-50 border-r border-gray-200" style={{width: '12.5%'}}>
                 <div className="flex items-center">
                   <div className="w-4 h-4 mr-2 rounded-full bg-red-600"></div>

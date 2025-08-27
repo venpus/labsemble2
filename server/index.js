@@ -125,15 +125,8 @@ const startServer = async () => {
       process.exit(1);
     }
 
-    // 테이블 생성 및 마이그레이션 실행
-    console.log('🔧 데이터베이스 테이블 생성 및 마이그레이션 시작...');
-    await createUsersTable();
-    await createMJProjectTable();
-    await createMJProjectReferenceLinksTable();
-    await createMJProjectImagesTable();
-    
-    // 모든 마이그레이션 실행
-    await runAllMigrations();
+    // 데이터베이스 마이그레이션은 database.js에서 자동으로 실행됩니다
+    console.log('🔧 데이터베이스 마이그레이션 확인 중...');
     
     console.log('✅ 데이터베이스 초기화 완료!');
     
