@@ -454,11 +454,11 @@ const createMJProjectImagesTable = async () => {
   }
 };
 
-// MJ 프로젝트 테이블에 납기 일정 관련 필드 추가
-async function migrateDeliveryScheduleColumns() {
+// MJ 프로젝트 테이블에 납기 관련 필드 추가
+async function migrateDeliveryColumns() {
   const connection = await pool.getConnection();
   try {
-    console.log('🚚 납기 일정 관련 필드 마이그레이션 시작...');
+    console.log('🚚 납기 관련 필드 마이그레이션 시작...');
 
     // actual_order_date 컬럼 추가 (실제 발주일)
     try {
@@ -508,9 +508,17 @@ async function migrateDeliveryScheduleColumns() {
       // 필드가 이미 존재하는 경우 무시
     }
 
-    console.log('🎉 납기 일정 관련 필드 마이그레이션 완료');
+    // changed_factory_shipping_date 컬럼 추가 (수동 설정된 공장 출고일)
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS changed_factory_shipping_date DATE DEFAULT NULL');
+      console.log('✅ changed_factory_shipping_date 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+
+    console.log('🎉 납기 관련 필드 마이그레이션 완료');
   } catch (error) {
-    console.error('❌ 납기 일정 관련 필드 마이그레이션 오류:', error);
+    console.error('❌ 납기 관련 필드 마이그레이션 오류:', error);
   } finally {
     connection.release();
   }
@@ -522,7 +530,7 @@ async function runAllMigrations() {
     console.log('🚀 데이터베이스 마이그레이션 시작...');
     
     await migratePaymentColumns();
-    await migrateDeliveryScheduleColumns();
+    await migrateDeliveryColumns();
     
     console.log('🎉 모든 마이그레이션 완료!');
   } catch (error) {

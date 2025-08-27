@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Package, Camera, X, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -30,51 +30,26 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
 
   // 첫 번째 행의 입고 상태를 확인하고 납기상태 자동 변경
   useEffect(() => {
-    console.log('🔍 WarehouseEntry useEffect 실행:', {
-      hasCallback: !!onDeliveryStatusChange,
-      entriesCount: warehouseEntries.length,
-      firstEntry: warehouseEntries[0]
-    });
-
     if (onDeliveryStatusChange && warehouseEntries.length > 0) {
       const firstEntry = warehouseEntries[0];
       const hasFirstEntryData = firstEntry.date && firstEntry.quantity && parseInt(firstEntry.quantity) > 0;
       
-      console.log('🚚 첫 번째 입고 기록 상태 확인:', {
-        date: firstEntry.date,
-        quantity: firstEntry.quantity,
-        hasData: hasFirstEntryData,
-        willCallCallback: hasFirstEntryData
-      });
-      
       if (hasFirstEntryData) {
         // 첫 번째 행에 입고날짜와 수량이 입력되면 "입고중" 상태로 변경
-        console.log('🚚 첫 번째 입고 기록 완성 감지:', {
-          date: firstEntry.date,
-          quantity: firstEntry.quantity,
-          hasData: hasFirstEntryData
-        });
-        console.log('📞 onDeliveryStatusChange 콜백 호출: 입고중');
         onDeliveryStatusChange('입고중');
       }
     }
-  }, [warehouseEntries, onDeliveryStatusChange]);
+  }, [warehouseEntries.length, warehouseEntries[0]?.date, warehouseEntries[0]?.quantity, onDeliveryStatusChange]);
 
   // 남은 수량이 0이 되면 "입고 완료" 상태로 자동 변경
   useEffect(() => {
     if (onDeliveryStatusChange && remainingQuantity === 0 && totalEnteredQuantity > 0) {
-      console.log('🎉 모든 입고 완료 감지:', {
-        totalEnteredQuantity,
-        remainingQuantity,
-        projectQuantity: project.quantity
-      });
-      console.log('📞 onDeliveryStatusChange 콜백 호출: 입고 완료');
       onDeliveryStatusChange('입고 완료');
     }
   }, [remainingQuantity, totalEnteredQuantity, onDeliveryStatusChange]);
 
   // 새로운 입고 기록 행 추가
-  const addWarehouseEntry = () => {
+  const addWarehouseEntry = useCallback(() => {
     if (warehouseEntries.length >= 10) {
       toast.error('최대 10개까지만 추가할 수 있습니다.');
       return;
@@ -89,10 +64,10 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
 
     setWarehouseEntries(prev => [...prev, newEntry]);
     toast.success('새로운 입고 기록 행이 추가되었습니다.');
-  };
+  }, [warehouseEntries.length]);
 
   // 입고 기록 행 삭제
-  const removeWarehouseEntry = (entryId) => {
+  const removeWarehouseEntry = useCallback((entryId) => {
     if (warehouseEntries.length <= 1) {
       toast.error('최소 1개의 입고 기록은 유지해야 합니다.');
       return;
@@ -100,10 +75,10 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
 
     setWarehouseEntries(prev => prev.filter(entry => entry.id !== entryId));
     toast.success('입고 기록 행이 삭제되었습니다.');
-  };
+  }, [warehouseEntries.length]);
 
   // 특정 행의 날짜 변경
-  const handleDateChange = (entryId, newDate) => {
+  const handleDateChange = useCallback((entryId, newDate) => {
     setWarehouseEntries(prev => prev.map(entry => 
       entry.id === entryId 
         ? { ...entry, date: newDate }
@@ -113,22 +88,21 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
     if (newDate) {
       const now = new Date();
       const currentTime = now.toTimeString().slice(0, 5);
-      console.log('📅 날짜 선택됨:', newDate, '자동 시간 설정:', currentTime);
       toast.success(`날짜가 선택되었습니다. 현재 시간(${currentTime})이 자동으로 저장됩니다.`);
     }
-  };
+  }, []);
 
   // 특정 행의 수량 변경
-  const handleQuantityChange = (entryId, newQuantity) => {
+  const handleQuantityChange = useCallback((entryId, newQuantity) => {
     setWarehouseEntries(prev => prev.map(entry => 
       entry.id === entryId 
         ? { ...entry, quantity: newQuantity }
         : entry
     ));
-  };
+  }, []);
 
   // 특정 행에 이미지 업로드
-  const handleImageUpload = async (event, entryId) => {
+  const handleImageUpload = useCallback(async (event, entryId) => {
     const files = Array.from(event.target.files);
     const targetEntry = warehouseEntries.find(entry => entry.id === entryId);
     
@@ -182,29 +156,29 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       console.error('이미지 처리 오류:', error);
       toast.error('이미지 처리 중 오류가 발생했습니다.');
     }
-  };
+  }, [warehouseEntries]);
 
   // 특정 행에서 이미지 제거
-  const removeImage = (entryId, imageId) => {
+  const removeImage = useCallback((entryId, imageId) => {
     setWarehouseEntries(prev => prev.map(entry => 
       entry.id === entryId 
         ? { ...entry, images: entry.images.filter(img => img.id !== imageId) }
         : entry
     ));
     toast.success('이미지가 제거되었습니다.');
-  };
+  }, []);
 
   // 이미지 미리보기 모달 열기
-  const openImageModal = (image) => {
+  const openImageModal = useCallback((image) => {
     setSelectedImage(image);
     setIsModalOpen(true);
-  };
+  }, []);
 
   // 이미지 미리보기 모달 닫기
-  const closeImageModal = () => {
+  const closeImageModal = useCallback(() => {
     setIsModalOpen(false);
     setSelectedImage(null);
-  };
+  }, []);
 
   // 첫 번째 행의 입고 상태 확인
   const firstEntry = warehouseEntries[0];

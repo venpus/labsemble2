@@ -1,7 +1,40 @@
 import React from 'react';
 import { Truck, Clock, Package, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-const DeliveryHeader = ({ deliveryStatus, onStatusChange }) => {
+const DeliveryHeader = ({ project }) => {
+  // 납기 상태 계산
+  const getDeliveryStatus = () => {
+    if (!project) return '발주대기';
+    
+    const isOrderCompleted = Boolean(project.is_order_completed);
+    const actualFactoryShippingDate = project.actual_factory_shipping_date;
+    const expectedFactoryShippingDate = project.expected_factory_shipping_date;
+    const changedFactoryShippingDate = project.changed_factory_shipping_date;
+    
+    if (!isOrderCompleted) {
+      return '발주 대기';
+    } else if (actualFactoryShippingDate) {
+      return '입고 대기';
+    } else {
+      // 출고 Delay 상태 확인
+      const today = new Date();
+      const kstDate = new Date(today.getTime() + (9 * 60 * 60 * 1000));
+      const todayString = kstDate.toISOString().split('T')[0];
+      
+      if (changedFactoryShippingDate && changedFactoryShippingDate !== null) {
+        return '출고 Delay';
+      }
+      
+      if (expectedFactoryShippingDate && todayString > expectedFactoryShippingDate) {
+        return '출고 Delay';
+      }
+      
+      return '출고 대기';
+    }
+  };
+
+  const currentStatus = getDeliveryStatus();
+  
   // 납기 상태에 따른 아이콘과 색상 설정
   const getStatusConfig = (status) => {
     switch (status) {
@@ -20,6 +53,14 @@ const DeliveryHeader = ({ deliveryStatus, onStatusChange }) => {
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',
           textColor: 'text-blue-800'
+        };
+      case '출고 Delay':
+        return {
+          icon: AlertCircle,
+          color: 'text-red-600',
+          bgColor: 'bg-red-50',
+          borderColor: 'border-red-200',
+          textColor: 'text-red-800'
         };
       case '공장 출고 완료':
         return {
@@ -44,7 +85,7 @@ const DeliveryHeader = ({ deliveryStatus, onStatusChange }) => {
           bgColor: 'bg-gradient-to-r from-purple-50 to-pink-50',
           borderColor: 'border-purple-300',
           textColor: 'text-purple-800',
-          special: true // 특별한 스타일 적용을 위한 플래그
+          special: true
         };
       case '입고 완료':
         return {
@@ -65,7 +106,7 @@ const DeliveryHeader = ({ deliveryStatus, onStatusChange }) => {
     }
   };
 
-  const statusConfig = getStatusConfig(deliveryStatus);
+  const statusConfig = getStatusConfig(currentStatus);
   const StatusIcon = statusConfig.icon;
 
   return (
@@ -82,7 +123,7 @@ const DeliveryHeader = ({ deliveryStatus, onStatusChange }) => {
         </div>
         
         <div className="flex items-center space-x-4">
-          {/* 납기 상태 표시 - 실시간 업데이트 */}
+          {/* 납기 상태 표시 */}
           <div className={`${statusConfig.bgColor} p-4 rounded-lg border-2 ${statusConfig.borderColor} ${
             statusConfig.special 
               ? 'shadow-lg shadow-purple-200/50 transform hover:scale-105 transition-all duration-300' 
@@ -94,15 +135,15 @@ const DeliveryHeader = ({ deliveryStatus, onStatusChange }) => {
                 statusConfig.special ? 'animate-spin' : ''
               } transition-colors duration-200`} />
               <span className={`text-sm font-medium ${statusConfig.textColor} ${
-                statusConfig.special ? 'font-bold' : ''
+                statusConfig.special ? 'font-bold' : '' 
               } transition-all duration-200`}>
-                {deliveryStatus || '상태 확인 중...'}
+                {currentStatus || '상태 확인 중...'}
               </span>
             </div>
             
             {/* 실시간 상태 변경 표시 */}
             <div className="mt-1 text-xs text-gray-500">
-              실시간 업데이트
+              DB 실시간 연동
             </div>
             
             {/* 입고중 상태일 때 추가 시각적 효과 */}
