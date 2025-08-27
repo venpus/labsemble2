@@ -17,7 +17,7 @@ const createPartnersTable = async () => {
     `;
     
     await pool.execute(createTableSQL);
-    console.log('Partners 테이블이 성공적으로 생성되었습니다.');
+
   } catch (error) {
     console.error('Partners 테이블 생성 중 오류:', error);
   }

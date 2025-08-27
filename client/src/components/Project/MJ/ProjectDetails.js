@@ -64,6 +64,15 @@ const ProjectDetails = () => {
     }
   };
 
+  // 프로젝트 상태 업데이트 처리
+  const handleProjectUpdate = (updates) => {
+    console.log('🔄 프로젝트 상태 업데이트:', updates);
+    setProject(prev => ({
+      ...prev,
+      ...updates
+    }));
+  };
+
   const handleEditProject = () => {
     navigate(`/dashboard/mj-projects/${id}/edit`);
   };
@@ -267,7 +276,7 @@ const ProjectDetails = () => {
                 }`}
               >
                 <Ship className="w-4 h-4 mr-2" />
-                출고 정보
+                물류 정보
               </button>
             </nav>
           </div>
@@ -507,7 +516,7 @@ const ProjectDetails = () => {
 
             {/* 납기 정보 탭 */}
             {activeTab === 'delivery' && (
-              <Delivery project={project} />
+              <Delivery project={project} onUpdate={handleProjectUpdate} />
             )}
 
             {/* 결제정보 탭 */}
@@ -515,12 +524,12 @@ const ProjectDetails = () => {
               <Payment project={project} user={user} />
             )}
 
-            {/* 출고 정보 탭 */}
+            {/* 물류 정보 탭 */}
             {activeTab === 'shipping' && (
               <div className="text-center py-12">
                 <Ship className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">출고 정보</h3>
-                <p className="text-gray-500">출고 관련 정보가 여기에 표시됩니다.</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">물류 정보</h3>
+                <p className="text-gray-500">물류 관련 정보가 여기에 표시됩니다.</p>
               </div>
             )}
           </div>

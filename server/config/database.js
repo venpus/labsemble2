@@ -1,32 +1,203 @@
 const mysql = require('mysql2/promise');
 
-// 데이터베이스 연결 풀 생성
-const pool = mysql.createPool({
-  host: 'labsemble.com',
-  user: 'venpus',
-  password: 'TianXian007!',
-  database: 'labsemble',
+// 데이터베이스 연결 설정
+const dbConfig = {
+  host: process.env.DB_HOST || 'labsemble.com',
+  user: process.env.DB_USER || 'venpus',
+  password: process.env.DB_PASSWORD || 'TianXian007!',
+  database: process.env.DB_NAME || 'labsemble',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  acquireTimeout: 60000,
-  connectTimeout: 60000,
-  readTimeout: 60000,
-  writeTimeout: 60000,
-  idleTimeout: 60000,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 0,
-  // 연결 안정성 향상을 위한 추가 설정
-  multipleStatements: false,
-  dateStrings: true,
-  timezone: '+09:00', // 한국 시간대 설정
-  // 재연결 설정
-  reconnect: true,
-  // 연결 풀 모니터링
-  connectionLimit: 10,
-  acquireTimeout: 60000,
-  timeout: 60000
-});
+  timezone: '+09:00', // 한국 시간대
+  charset: 'utf8mb4'
+};
+
+// 연결 풀 생성
+const pool = mysql.createPool(dbConfig);
+
+// factory_shipping_status 필드 마이그레이션 함수
+async function migrateFactoryShippingStatus() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 factory_shipping_status 필드 마이그레이션 시작...');
+    
+    // factory_shipping_status 필드 존재 여부 확인
+    const [columns] = await connection.execute(
+      "SHOW COLUMNS FROM mj_project LIKE 'factory_shipping_status'"
+    );
+
+    if (columns.length === 0) {
+      // 필드가 없으면 추가
+      await connection.execute(`
+        ALTER TABLE mj_project 
+        ADD COLUMN factory_shipping_status VARCHAR(50) DEFAULT '출고 대기' 
+        COMMENT '공장 출고 상태 (정시출고, 조기출고, 출고연기, 출고 대기)'
+      `);
+      
+      console.log('✅ factory_shipping_status 필드 추가 완료');
+      
+      // 기존 데이터에 대한 기본값 설정
+      await connection.execute(`
+        UPDATE mj_project 
+        SET factory_shipping_status = '출고 대기' 
+        WHERE factory_shipping_status IS NULL
+      `);
+      
+      console.log('✅ 기존 데이터 기본값 설정 완료');
+      
+      return { success: true, added: true, message: 'factory_shipping_status 필드 마이그레이션이 완료되었습니다.' };
+    } else {
+      console.log('ℹ️ factory_shipping_status 필드가 이미 존재합니다.');
+      return { success: true, added: false, message: 'factory_shipping_status 필드가 이미 존재합니다.' };
+    }
+    
+  } catch (error) {
+    console.error('❌ factory_shipping_status 마이그레이션 오류:', error);
+    return { success: false, error: error.message };
+  } finally {
+    connection.release();
+  }
+}
+
+// warehouse 관련 테이블 마이그레이션 함수
+async function migrateWarehouseTables() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 warehouse 관련 테이블 마이그레이션 시작...');
+    
+    // warehouse_entries 테이블 존재 여부 확인
+    const [tables] = await connection.execute(
+      "SHOW TABLES LIKE 'warehouse_entries'"
+    );
+
+    if (tables.length === 0) {
+      // warehouse_entries 테이블 생성
+      await connection.execute(`
+        CREATE TABLE warehouse_entries (
+          id INT PRIMARY KEY AUTO_INCREMENT,
+          project_id INT NOT NULL,
+          entry_date DATE NOT NULL COMMENT '입고 날짜',
+          shipping_date DATE NOT NULL COMMENT '출고 날짜',
+          quantity INT NOT NULL COMMENT '입고 수량',
+          status ENUM('입고중', '입고완료') DEFAULT '입고중' COMMENT '입고 상태',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          
+          INDEX idx_project_id (project_id),
+          INDEX idx_entry_date (entry_date),
+          INDEX idx_shipping_date (shipping_date),
+          INDEX idx_status (status),
+          
+          FOREIGN KEY (project_id) REFERENCES mj_project(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        COMMENT='입고 기록 테이블'
+      `);
+      
+      console.log('✅ warehouse_entries 테이블 생성 완료');
+    } else {
+      console.log('ℹ️ warehouse_entries 테이블이 이미 존재합니다.');
+    }
+
+    // warehouse_images 테이블 존재 여부 확인
+    const [imageTables] = await connection.execute(
+      "SHOW TABLES LIKE 'warehouse_images'"
+    );
+
+    if (imageTables.length === 0) {
+      // warehouse_images 테이블 생성
+      await connection.execute(`
+        CREATE TABLE warehouse_images (
+          id INT PRIMARY KEY AUTO_INCREMENT,
+          project_id INT NOT NULL COMMENT '프로젝트 ID',
+          entry_id INT NOT NULL COMMENT '입고 기록 ID',
+          original_filename VARCHAR(255) NOT NULL COMMENT '원본 파일명',
+          stored_filename VARCHAR(255) NOT NULL COMMENT '저장된 파일명',
+          file_path VARCHAR(500) NOT NULL COMMENT '파일 경로',
+          file_size INT NOT NULL COMMENT '파일 크기 (bytes)',
+          mime_type VARCHAR(100) NOT NULL COMMENT 'MIME 타입',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          
+          INDEX idx_project_id (project_id),
+          INDEX idx_entry_id (entry_id),
+          INDEX idx_created_at (created_at),
+          
+          FOREIGN KEY (project_id) REFERENCES mj_project(id) ON DELETE CASCADE,
+          FOREIGN KEY (entry_id) REFERENCES warehouse_entries(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        COMMENT='입고 이미지 테이블'
+      `);
+      
+      console.log('✅ warehouse_images 테이블 생성 완료');
+    } else {
+      console.log('ℹ️ warehouse_images 테이블이 이미 존재합니다.');
+    }
+
+    // 기존 테이블에 누락된 컬럼이 있는지 확인하고 추가
+    const [columns] = await connection.execute(
+      "SHOW COLUMNS FROM warehouse_entries LIKE 'status'"
+    );
+
+    if (columns.length === 0) {
+      // status 컬럼 추가
+      await connection.execute(`
+        ALTER TABLE warehouse_entries 
+        ADD COLUMN status ENUM('입고중', '입고완료') DEFAULT '입고중' 
+        COMMENT '입고 상태'
+      `);
+      
+      console.log('✅ warehouse_entries 테이블에 status 컬럼 추가 완료');
+    }
+
+    return { success: true, message: 'warehouse 관련 테이블 마이그레이션이 완료되었습니다.' };
+    
+  } catch (error) {
+    console.error('❌ warehouse 테이블 마이그레이션 오류:', error);
+    return { success: false, error: error.message };
+  } finally {
+    connection.release();
+  }
+}
+
+// 데이터베이스 연결 테스트 및 마이그레이션 실행
+async function initializeDatabase() {
+  try {
+    console.log('🔄 데이터베이스 연결 테스트 중...');
+    
+    // 연결 테스트
+    const connection = await pool.getConnection();
+    console.log('✅ 데이터베이스 연결 성공');
+    connection.release();
+    
+    // factory_shipping_status 마이그레이션 실행
+    console.log('🔄 factory_shipping_status 마이그레이션 시작...');
+    const factoryMigrationResult = await migrateFactoryShippingStatus();
+    if (factoryMigrationResult.success) {
+      console.log('✅ factory_shipping_status 마이그레이션 완료:', factoryMigrationResult.message);
+    } else {
+      console.error('❌ factory_shipping_status 마이그레이션 실패:', factoryMigrationResult.error);
+    }
+    
+    // warehouse 테이블 마이그레이션 실행
+    console.log('🔄 warehouse 테이블 마이그레이션 시작...');
+    const warehouseMigrationResult = await migrateWarehouseTables();
+    if (warehouseMigrationResult.success) {
+      console.log('✅ warehouse 테이블 마이그레이션 완료:', warehouseMigrationResult.message);
+    } else {
+      console.error('❌ warehouse 테이블 마이그레이션 실패:', warehouseMigrationResult.error);
+    }
+    
+    console.log('🎉 모든 마이그레이션이 완료되었습니다!');
+    
+  } catch (error) {
+    console.error('❌ 데이터베이스 초기화 오류:', error);
+  }
+}
+
+// 서버 시작 시 자동으로 마이그레이션 실행
+initializeDatabase();
 
 // 연결 테스트 함수
 const testConnection = async () => {
@@ -508,14 +679,6 @@ async function migrateDeliveryColumns() {
       // 필드가 이미 존재하는 경우 무시
     }
 
-    // changed_factory_shipping_date 컬럼 추가 (수동 설정된 공장 출고일)
-    try {
-      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS changed_factory_shipping_date DATE DEFAULT NULL');
-      console.log('✅ changed_factory_shipping_date 필드 추가/확인 완료');
-    } catch (error) {
-      // 필드가 이미 존재하는 경우 무시
-    }
-
     console.log('🎉 납기 관련 필드 마이그레이션 완료');
   } catch (error) {
     console.error('❌ 납기 관련 필드 마이그레이션 오류:', error);
@@ -531,6 +694,8 @@ async function runAllMigrations() {
     
     await migratePaymentColumns();
     await migrateDeliveryColumns();
+    await migrateFactoryShippingStatus();
+    await migrateWarehouseTables();
     
     console.log('🎉 모든 마이그레이션 완료!');
   } catch (error) {
@@ -546,5 +711,7 @@ module.exports = {
   createMJProjectReferenceLinksTable,
   createMJProjectImagesTable,
   migratePaymentColumns,
-  runAllMigrations
+  runAllMigrations,
+  migrateFactoryShippingStatus,
+  migrateWarehouseTables
 };

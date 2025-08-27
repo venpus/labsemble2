@@ -256,18 +256,7 @@ router.get('/:id', async (req, res) => {
     
     const project = projects[0];
     
-    // Delivery 관련 필드 로깅
-    console.log('📊 프로젝트 조회 - Delivery 필드 확인:', {
-      id: project.id,
-      project_name: project.project_name,
-      is_order_completed: project.is_order_completed,
-      actual_order_date: project.actual_order_date,
-      expected_factory_shipping_date: project.expected_factory_shipping_date,
-      is_factory_shipping_completed: project.is_factory_shipping_completed,
-      actual_factory_shipping_date: project.actual_factory_shipping_date,
-      delivery_status: project.delivery_status,
-      factory_delivery_days: project.factory_delivery_days
-    });
+
     
     // 참고링크 조회
     const [links] = await pool.execute(
@@ -356,7 +345,7 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     const allowedFields = [
       'unit_weight', 'packaging_method', 'box_dimensions', 'box_weight', 'factory_delivery_days',
       'actual_order_date', 'expected_factory_shipping_date', 'actual_factory_shipping_date', 'is_order_completed',
-      'is_factory_shipping_completed',
+      'is_factory_shipping_completed', 'factory_shipping_status',
       'project_name', 'description', 'quantity', 'target_price', 'reference_links'
     ];
 
@@ -371,7 +360,7 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     // 실제 공장 출고일이 설정되면 공장 출고 완료 상태를 true로 자동 업데이트
     if (filteredData.actual_factory_shipping_date && filteredData.actual_factory_shipping_date !== null) {
       filteredData.is_factory_shipping_completed = true;
-      console.log('🏭 실제 공장 출고일 설정됨, 공장 출고 완료 상태를 true로 업데이트');
+  
     }
 
     // 업데이트 실행
@@ -384,7 +373,7 @@ router.patch('/:id', authMiddleware, async (req, res) => {
         [...updateValues, projectId]
       );
       
-      console.log('✅ 프로젝트 정보 업데이트 완료:', filteredData);
+  
     }
     
     res.json({ message: '프로젝트 정보가 성공적으로 업데이트되었습니다.' });
@@ -578,25 +567,27 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
   try {
     const projectId = req.params.id;
     
-    // Delivery 데이터 추출
+    // Delivery 데이터 추출 - Frontend 필드명과 매핑
     const {
-      isOrderCompleted,
-      actualOrderDate,
-      expectedFactoryShippingDate,
-      changedFactoryShippingDate,
-      isFactoryShippingCompleted,
-      actualFactoryShippingDate,
-      deliveryStatus
+      is_order_completed,  // Frontend에서 전송하는 필드명
+      actual_order_date,   // Frontend에서 전송하는 필드명
+      expected_factory_shipping_date,
+      changed_factory_shipping_date,
+      is_factory_shipping_completed,
+      actual_factory_shipping_date,
+      factory_shipping_status,
+      delivery_status
     } = req.body;
 
     console.log('📥 받은 Delivery 데이터:', {
-      isOrderCompleted,
-      actualOrderDate,
-      expectedFactoryShippingDate,
-      changedFactoryShippingDate,
-      isFactoryShippingCompleted,
-      actualFactoryShippingDate,
-      deliveryStatus
+      is_order_completed,
+      actual_order_date,
+      expected_factory_shipping_date,
+      changed_factory_shipping_date,
+      is_factory_shipping_completed,
+      actual_factory_shipping_date,
+      factory_shipping_status,
+      delivery_status
     });
 
     // 프로젝트 존재 여부 확인
@@ -608,6 +599,8 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
     if (project.length === 0) {
       return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
     }
+
+
     
     // 권한 확인 (admin만 수정 가능)
     const [user] = await connection.execute(
@@ -625,14 +618,19 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
 
     // 날짜 형식 처리 함수 - Timezone 문제 해결
     const processDate = (dateValue) => {
-      if (!dateValue || dateValue === '') {
+      // undefined인 경우 undefined를 그대로 반환 (null로 변환하지 않음)
+      if (dateValue === undefined) {
+        return undefined;
+      }
+      
+      // null이나 빈 문자열인 경우 null 반환
+      if (dateValue === null || dateValue === '') {
         return null;
       }
       
       try {
         // 이미 YYYY-MM-DD 형식인 경우 그대로 사용 (Frontend에서 한국 시간대로 전송)
         if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-          console.log('📅 YYYY-MM-DD 형식 날짜 처리:', dateValue);
           return dateValue;
         }
         
@@ -640,83 +638,62 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
         if (typeof dateValue === 'string' && dateValue.includes('T')) {
           const date = new Date(dateValue);
           if (isNaN(date.getTime())) {
-            console.log('❌ 유효하지 않은 날짜:', dateValue);
             return null;
           }
           
           // 한국 시간대(KST)로 변환하여 YYYY-MM-DD 형식 반환
           const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
           const result = kstDate.toISOString().split('T')[0];
-          console.log('🌏 ISO 문자열 날짜 변환:', { 원본: dateValue, 결과: result });
           return result;
         }
         
         // Date 객체인 경우
         if (dateValue instanceof Date) {
           if (isNaN(dateValue.getTime())) {
-            console.log('❌ 유효하지 않은 Date 객체:', dateValue);
             return null;
           }
           // 한국 시간대로 변환
-          const kstDate = new Date(dateValue.getTime() + (9 * 60 * 60 * 1000));
+          const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
           const result = kstDate.toISOString().split('T')[0];
-          console.log('🌏 Date 객체 날짜 변환:', { 원본: dateValue.toISOString(), 결과: result });
           return result;
         }
         
-        console.log('❓ 알 수 없는 날짜 형식:', dateValue, typeof dateValue);
         return null;
       } catch (error) {
-        console.error('날짜 변환 오류:', error);
         return null;
       }
     };
 
     // 날짜 데이터 처리
-    const processedActualOrderDate = processDate(actualOrderDate);
-    const processedExpectedFactoryShippingDate = processDate(expectedFactoryShippingDate);
-    const processedChangedFactoryShippingDate = processDate(changedFactoryShippingDate);
-    const processedActualFactoryShippingDate = processDate(actualFactoryShippingDate);
+    const processedActualOrderDate = processDate(actual_order_date);
+    const processedExpectedFactoryShippingDate = processDate(expected_factory_shipping_date);
+    const processedChangedFactoryShippingDate = processDate(changed_factory_shipping_date);
+    const processedActualFactoryShippingDate = processDate(actual_factory_shipping_date);
 
     console.log('📅 Delivery 데이터 처리:', {
-      isOrderCompleted,
-      actualOrderDate,
+      is_order_completed,
+      actual_order_date,
       processedActualOrderDate,
-      expectedFactoryShippingDate,
+      expected_factory_shipping_date,
       processedExpectedFactoryShippingDate,
-      changedFactoryShippingDate,
+      changed_factory_shipping_date,
       processedChangedFactoryShippingDate,
-      isFactoryShippingCompleted,
-      actualFactoryShippingDate,
+      is_factory_shipping_completed,
+      actual_factory_shipping_date,
       processedActualFactoryShippingDate
     });
     
-    // null 값 처리 확인
-    if (changedFactoryShippingDate === null) {
-      console.log('🔍 changedFactoryShippingDate가 null로 전송됨');
-      console.log('🔍 원본 값 타입:', typeof changedFactoryShippingDate);
-      console.log('🔍 원본 값:', changedFactoryShippingDate);
-    } else if (changedFactoryShippingDate) {
-      console.log('🔍 changedFactoryShippingDate가 날짜로 전송됨:', changedFactoryShippingDate);
-      console.log('🔍 원본 값 타입:', typeof changedFactoryShippingDate);
-    }
-    if (processedChangedFactoryShippingDate === null) {
-      console.log('🔍 processedChangedFactoryShippingDate가 null로 처리됨');
-      console.log('🔍 처리된 값 타입:', typeof processedChangedFactoryShippingDate);
-      console.log('🔍 처리된 값:', processedChangedFactoryShippingDate);
-    } else if (processedChangedFactoryShippingDate) {
-      console.log('🔍 processedChangedFactoryShippingDate가 날짜로 처리됨:', processedChangedFactoryShippingDate);
-      console.log('🔍 처리된 값 타입:', typeof processedChangedFactoryShippingDate);
-    }
+
+
 
     // Delivery 데이터 업데이트 - 부분 업데이트 지원
     let updateFields = [];
     let updateValues = [];
     
-    // 각 필드가 undefined가 아닌 경우에만 업데이트 (null 값은 허용)
-    if (isOrderCompleted !== undefined) {
+    // 각 필드가 undefined가 아닌 경우에만 업데이트 (null 값은 허용하되 undefined는 제외)
+    if (is_order_completed !== undefined) {
       updateFields.push('is_order_completed = ?');
-      updateValues.push(isOrderCompleted);
+      updateValues.push(is_order_completed);
     }
     
     if (processedActualOrderDate !== undefined) {
@@ -732,31 +709,11 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
     if (processedChangedFactoryShippingDate !== undefined) {
       updateFields.push('changed_factory_shipping_date = ?');
       updateValues.push(processedChangedFactoryShippingDate);
-      
-      console.log('🔧 changed_factory_shipping_date 업데이트 필드 추가:', {
-        필드: 'changed_factory_shipping_date = ?',
-        값: processedChangedFactoryShippingDate,
-        값타입: typeof processedChangedFactoryShippingDate
-      });
-      
-      // changed_factory_shipping_date만 업데이트하는 경우 로그 추가
-      if (updateFields.length === 1) { // updated_at 제외하고 changed_factory_shipping_date만 있는 경우
-        console.log('🔒 changed_factory_shipping_date만 업데이트 - 다른 필드들 보호됨');
-      }
-      
-      // null 값으로 설정되는 경우 로그 추가
-      if (processedChangedFactoryShippingDate === null) {
-        console.log('🗑️ changed_factory_shipping_date를 null로 설정 - 수동 출고일 해제');
-        console.log('🗑️ SQL: changed_factory_shipping_date = NULL');
-      } else {
-        console.log('📅 changed_factory_shipping_date를 날짜로 설정:', processedChangedFactoryShippingDate);
-        console.log('📅 SQL: changed_factory_shipping_date = ?');
-      }
     }
     
-    if (isFactoryShippingCompleted !== undefined) {
+    if (is_factory_shipping_completed !== undefined) {
       updateFields.push('is_factory_shipping_completed = ?');
-      updateValues.push(isFactoryShippingCompleted);
+      updateValues.push(is_factory_shipping_completed);
     }
     
     if (processedActualFactoryShippingDate !== undefined) {
@@ -764,19 +721,14 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
       updateValues.push(processedActualFactoryShippingDate);
     }
     
-    if (deliveryStatus !== undefined) {
+    if (factory_shipping_status !== undefined) {
+      updateFields.push('factory_shipping_status = ?');
+      updateValues.push(factory_shipping_status);
+    }
+    
+    if (delivery_status !== undefined) {
       updateFields.push('delivery_status = ?');
-      updateValues.push(deliveryStatus);
-      
-      // 출고 Delay 상태 로그 추가
-      if (deliveryStatus === '출고 Delay') {
-        console.log('🚨 출고 Delay 상태로 DB 업데이트:', {
-          projectId,
-          deliveryStatus,
-          changed_factory_shipping_date: processedChangedFactoryShippingDate,
-          expected_factory_shipping_date: processedExpectedFactoryShippingDate
-        });
-      }
+      updateValues.push(delivery_status);
     }
     
     // updated_at은 항상 업데이트
@@ -787,60 +739,26 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
     
     if (updateFields.length > 1) { // updated_at + projectId 외에 다른 필드가 있는 경우
       const updateSQL = `UPDATE mj_project SET ${updateFields.join(', ')} WHERE id = ?`;
-      console.log('🔧 부분 업데이트 SQL:', updateSQL);
-      console.log('🔧 업데이트 값:', updateValues);
-      console.log('🔧 업데이트 필드 개수:', updateFields.length);
       
       await connection.execute(updateSQL, updateValues);
-      console.log('✅ DB 업데이트 완료');
       
-              // 업데이트 확인을 위한 추가 쿼리 실행
-        if (processedChangedFactoryShippingDate !== undefined) {
-          console.log('🔍 업데이트 확인을 위한 추가 쿼리 실행');
-          const [verifyResult] = await connection.execute(
-            'SELECT changed_factory_shipping_date FROM mj_project WHERE id = ?',
-            [projectId]
-          );
-          if (verifyResult.length > 0) {
-            console.log('🔍 업데이트 후 changed_factory_shipping_date 값:', verifyResult[0].changed_factory_shipping_date);
-            if (processedChangedFactoryShippingDate === null) {
-              console.log('✅ null 값으로 성공적으로 업데이트됨');
-            } else {
-              console.log('✅ 날짜 값으로 성공적으로 업데이트됨');
-            }
-          }
-        }
-    } else {
-      console.log('⚠️ 업데이트할 필드가 없습니다. (updated_at만 업데이트됨)');
-    }
-    
-    // changed_factory_shipping_date만 업데이트된 경우 보호 확인
-    if (processedChangedFactoryShippingDate !== undefined && updateFields.length === 2) {
-      if (processedChangedFactoryShippingDate === null) {
-        console.log('🔒 changed_factory_shipping_date를 null로 업데이트 완료 - 수동 출고일 해제됨');
-      } else {
-        console.log('🔒 changed_factory_shipping_date 업데이트 완료 - actual_order_date, expected_factory_shipping_date 보호됨');
+      // 업데이트 확인을 위한 추가 쿼리 실행
+      if (processedChangedFactoryShippingDate !== undefined) {
+        const [verifyResult] = await connection.execute(
+          'SELECT changed_factory_shipping_date FROM mj_project WHERE id = ?',
+          [projectId]
+        );
       }
     }
     
-    console.log('✅ Delivery 데이터 저장 완료');
-    
     // 저장된 데이터 확인
     const [savedProject] = await connection.execute(
-      'SELECT is_order_completed, actual_order_date, expected_factory_shipping_date, changed_factory_shipping_date, is_factory_shipping_completed, actual_factory_shipping_date, delivery_status FROM mj_project WHERE id = ?',
+      'SELECT is_order_completed, actual_order_date, expected_factory_shipping_date, changed_factory_shipping_date, is_factory_shipping_completed, actual_factory_shipping_date, factory_shipping_status, delivery_status FROM mj_project WHERE id = ?',
       [projectId]
     );
     
     if (savedProject.length > 0) {
-      console.log('🔍 저장된 데이터 확인:', {
-        is_order_completed: savedProject[0].is_order_completed,
-        actual_order_date: savedProject[0].actual_order_date,
-        expected_factory_shipping_date: savedProject[0].expected_factory_shipping_date,
-        changed_factory_shipping_date: savedProject[0].changed_factory_shipping_date,
-        is_factory_shipping_completed: savedProject[0].is_factory_shipping_completed,
-        actual_factory_shipping_date: savedProject[0].actual_factory_shipping_date,
-        delivery_status: savedProject[0].delivery_status
-      });
+      // 저장된 데이터 확인 완료
     }
     
     res.json({ message: 'Delivery 데이터가 성공적으로 저장되었습니다.' });
@@ -950,22 +868,6 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
     const processedAdvanceDueDate = processDate(advanceDueDate);
     
     // Payment 데이터 업데이트
-    console.log('🏦 Payment 데이터 저장 시작:', {
-      projectId,
-      numericUnitPrice,
-      numericSelectedFeeRate,
-      safePaymentStatus,
-      safePaymentDates,
-      processedBalanceDueDate,
-      processedAdvanceDueDate,
-      safePaymentDueDates,
-      numericFactoryShippingCost,
-      numericSubtotal,
-      numericFee,
-      numericTotalAmount,
-      numericAdvancePayment,
-      safeAdditionalCostItems
-    });
 
     await connection.execute(
       `UPDATE mj_project SET 
@@ -1002,7 +904,7 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
       ]
     );
     
-    console.log('✅ Payment 데이터 저장 완료');
+
     
     // additional_cost_items가 있는 경우 기존 additional_cost 필드도 동기화 (하위 호환성)
     if (safeAdditionalCostItems && safeAdditionalCostItems !== '[]') {

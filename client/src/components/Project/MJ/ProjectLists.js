@@ -334,30 +334,6 @@ const ProjectLists = () => {
             </div>
           )}
         </div>
-
-        {/* Summary */}
-        {projects.length > 0 && (
-          <div className="mt-6 bg-white rounded-lg shadow-sm p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{projects.length}</div>
-                <div className="text-sm text-gray-600">전체 프로젝트</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {projects.filter(p => p.status === 'approved').length}
-                </div>
-                <div className="text-sm text-gray-600">승인된 프로젝트</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-600">
-                  {projects.filter(p => p.status === 'pending').length}
-                </div>
-                <div className="text-sm text-gray-600">대기중인 프로젝트</div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
