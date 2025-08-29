@@ -1,24 +1,15 @@
 import React from 'react';
+import { getCurrentKST, formatDate } from '../../../../../utils/timezone';
 
 const OrderCheck = ({ project, onDateChange, handleMultipleUpdates, isAdmin, isAdminLoading }) => {
-  // 한국 시간대 기준 오늘 날짜 계산
+  // 한국 시간대 기준 오늘 날짜 계산 (KST)
   const getTodayString = () => {
-    const today = new Date();
-    const kstDate = new Date(today.getTime() + (9 * 60 * 60 * 1000));
-    return kstDate.toISOString().split('T')[0];
+    return getCurrentKST().toISOString().split('T')[0];
   };
 
-  // 날짜를 년-월-일 형식으로 포맷팅
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
+  // 날짜를 년-월-일 형식으로 포맷팅 (유틸리티 함수 사용)
+  const formatDateString = (dateString) => {
+    return formatDate(dateString);
   };
 
   // 예상 공장 출고일 계산 (발주 실제일 + 공장 납기 소요일)
@@ -131,7 +122,7 @@ const OrderCheck = ({ project, onDateChange, handleMultipleUpdates, isAdmin, isA
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
         {project?.actual_order_date ? (
           <span className="text-gray-900 font-medium">
-            {formatDate(project.actual_order_date)}
+            {formatDateString(project.actual_order_date)}
           </span>
         ) : (
           <span className="text-gray-400">-</span>

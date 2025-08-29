@@ -4,6 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const { pool } = require('../config/database');
 const authMiddleware = require('../middleware/auth');
+const { 
+  getCurrentKSTString, 
+  formatDate, 
+  convertUTCToKST,
+  isValidDate 
+} = require('../utils/timezone');
 
 const router = express.Router();
 
@@ -193,7 +199,14 @@ router.get('/', authMiddleware, async (req, res) => {
         p.description,
         p.quantity,
         p.target_price,
+        p.unit_price,
+        p.total_amount,
         p.status,
+        p.is_order_completed,
+        p.actual_order_date,
+        p.expected_factory_shipping_date,
+        p.actual_factory_shipping_date,
+        p.factory_shipping_status,
         p.user_id,
         p.created_by,
         p.created_at,
@@ -201,7 +214,8 @@ router.get('/', authMiddleware, async (req, res) => {
         u.company_name,
         c.username as created_by_username,
         c.company_name as created_by_company,
-        (SELECT file_path FROM mj_project_images WHERE project_id = p.id ORDER BY id ASC LIMIT 1) as representative_image
+        (SELECT file_path FROM mj_project_images WHERE project_id = p.id ORDER BY id ASC LIMIT 1) as representative_image,
+        (SELECT COALESCE(SUM(quantity), 0) FROM warehouse_entries WHERE project_id = p.id) as warehouse_quantity
       FROM mj_project p
       JOIN users u ON p.user_id = u.id
       JOIN users c ON p.created_by = c.id
@@ -219,6 +233,8 @@ router.get('/', authMiddleware, async (req, res) => {
     sql += ' ORDER BY p.created_at DESC';
     
     const [projects] = await pool.execute(sql, params);
+    
+
     
     res.json({ success: true, projects });
   } catch (error) {
@@ -579,16 +595,7 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
       delivery_status
     } = req.body;
 
-    console.log('📥 받은 Delivery 데이터:', {
-      is_order_completed,
-      actual_order_date,
-      expected_factory_shipping_date,
-      changed_factory_shipping_date,
-      is_factory_shipping_completed,
-      actual_factory_shipping_date,
-      factory_shipping_status,
-      delivery_status
-    });
+
 
     // 프로젝트 존재 여부 확인
     const [project] = await connection.execute(
@@ -642,9 +649,8 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
           }
           
           // 한국 시간대(KST)로 변환하여 YYYY-MM-DD 형식 반환
-          const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
-          const result = kstDate.toISOString().split('T')[0];
-          return result;
+          const kstDate = convertUTCToKST(dateValue);
+          return kstDate ? formatDate(kstDate) : null;
         }
         
         // Date 객체인 경우
@@ -653,9 +659,8 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
             return null;
           }
           // 한국 시간대로 변환
-          const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
-          const result = kstDate.toISOString().split('T')[0];
-          return result;
+          const kstDate = convertUTCToKST(dateValue);
+          return kstDate ? formatDate(kstDate) : null;
         }
         
         return null;
@@ -670,18 +675,7 @@ router.post('/:id/delivery', authMiddleware, async (req, res) => {
     const processedChangedFactoryShippingDate = processDate(changed_factory_shipping_date);
     const processedActualFactoryShippingDate = processDate(actual_factory_shipping_date);
 
-    console.log('📅 Delivery 데이터 처리:', {
-      is_order_completed,
-      actual_order_date,
-      processedActualOrderDate,
-      expected_factory_shipping_date,
-      processedExpectedFactoryShippingDate,
-      changed_factory_shipping_date,
-      processedChangedFactoryShippingDate,
-      is_factory_shipping_completed,
-      actual_factory_shipping_date,
-      processedActualFactoryShippingDate
-    });
+
     
 
 

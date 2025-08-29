@@ -8,8 +8,12 @@ const dbConfig = {
   user: process.env.DB_USER || 'venpus',
   password: process.env.DB_PASSWORD || 'TianXian007!',
   database: process.env.DB_NAME || 'labsemble',
-  timezone: '+09:00', // 한국 시간대
-  charset: 'utf8mb4'
+  timezone: '+09:00', // 한국 시간대 (KST)
+  charset: 'utf8mb4',
+  // 추가 시간대 설정
+  dateStrings: true, // 날짜를 문자열로 반환
+  supportBigNumbers: true,
+  bigNumberStrings: true
 };
 
 async function runSupplierMigration() {

@@ -3,6 +3,10 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+
+// 시간대 설정 - 한국 시간대(KST)로 통일
+process.env.TZ = 'Asia/Seoul';
+
 const { 
   testConnection, 
   createUsersTable, 
@@ -61,6 +65,7 @@ app.get('/api/migration/status', async (req, res) => {
       SELECT 
         COUNT(*) as total_projects,
         COUNT(CASE WHEN additional_cost_items IS NOT NULL THEN 1 END) as projects_with_additional_costs,
+        COUNT(CASE WHEN unit_price IS NOT NULL THEN 1 END) as projects_with_unit_price,
         COUNT(CASE WHEN unit_weight IS NOT NULL THEN 1 END) as projects_with_unit_weight,
         COUNT(CASE WHEN packaging_method IS NOT NULL THEN 1 END) as projects_with_packaging_method,
         COUNT(CASE WHEN box_dimensions IS NOT NULL THEN 1 END) as projects_with_box_dimensions,
@@ -76,6 +81,7 @@ app.get('/api/migration/status', async (req, res) => {
 
     const migration_status = {
       has_additional_costs: projects[0].projects_with_additional_costs > 0,
+      has_unit_price: projects[0].projects_with_unit_price > 0,
       has_unit_weight: projects[0].projects_with_unit_weight > 0,
       has_packaging_method: projects[0].projects_with_packaging_method > 0,
       has_box_dimensions: projects[0].projects_with_box_dimensions > 0,
@@ -99,6 +105,27 @@ app.get('/api/migration/status', async (req, res) => {
 // Simple test endpoint
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Server is working correctly!' });
+});
+
+// unit_price 데이터 확인용 테스트 엔드포인트
+app.get('/api/test/unit-price', async (req, res) => {
+  try {
+    const { pool } = require('./config/database');
+    const [projects] = await pool.execute(`
+      SELECT id, project_name, unit_price, target_price, quantity 
+      FROM mj_project 
+      LIMIT 5
+    `);
+    
+    res.json({ 
+      message: 'unit_price 데이터 확인',
+      projects: projects,
+      total_count: projects.length
+    });
+  } catch (error) {
+    console.error('unit_price 테스트 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Error handling middleware

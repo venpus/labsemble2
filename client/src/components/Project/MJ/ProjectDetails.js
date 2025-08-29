@@ -29,6 +29,15 @@ const ProjectDetails = () => {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('basic');
 
+  // URL 쿼리 파라미터에서 탭 정보 가져오기
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    if (tabParam && ['basic', 'payment', 'delivery', 'shipping'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, []);
+
   useEffect(() => {
     if (isAuthenticated && id) {
       fetchProjectDetails();

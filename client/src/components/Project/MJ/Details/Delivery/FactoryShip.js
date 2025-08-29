@@ -1,33 +1,20 @@
 import React, { useEffect } from 'react';
+import { getCurrentKST, formatDate, calculateDateDifference } from '../../../../../utils/timezone';
 
 const FactoryShip = ({ project, onDateChange, handleMultipleUpdates, isAdmin, isAdminLoading }) => {
-  // 한국 시간대 기준 오늘 날짜 계산 (GMT+9)
+  // 한국 시간대 기준 오늘 날짜 계산 (KST)
   const getTodayString = () => {
-    const today = new Date();
-    const kstDate = new Date(today.getTime() + (9 * 60 * 60 * 1000));
-    return kstDate.toISOString().split('T')[0];
+    return getCurrentKST().toISOString().split('T')[0];
   };
 
-  // GMT+9 시간대 기준 현재 날짜 객체 생성
+  // 한국 시간대 기준 현재 날짜 객체 생성 (KST)
   const getCurrentKSTDate = () => {
-    const now = new Date();
-    const kstOffset = 9 * 60; // GMT+9 (분 단위)
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const kstDate = new Date(utc + (kstOffset * 60000));
-    return kstDate;
+    return getCurrentKST();
   };
 
-  // 날짜를 년-월-일 형식으로 포맷팅
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
+  // 날짜를 년-월-일 형식으로 포맷팅 (유틸리티 함수 사용)
+  const formatDateString = (dateString) => {
+    return formatDate(dateString);
   };
 
   // 예상 공장 출고일 계산 (발주 실제일 + 공장 납기 소요일)
@@ -99,7 +86,7 @@ const FactoryShip = ({ project, onDateChange, handleMultipleUpdates, isAdmin, is
     const actualDate = new Date(project.actual_factory_shipping_date);
     
     const timeDiff = actualDate.getTime() - expectedDate.getTime();
-    const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+    const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 1000));
     
     return {
       days: Math.abs(daysDiff),
@@ -120,6 +107,23 @@ const FactoryShip = ({ project, onDateChange, handleMultipleUpdates, isAdmin, is
       return '출고 대기';
     }
 
+    // actual_factory_shipping_date가 설정되어 있으면 출고 완료 상태
+    if (project?.actual_factory_shipping_date) {
+      // 예상일과 실제일 비교하여 상태 계산
+      const dateDiff = calculateDateDifference();
+      if (dateDiff) {
+        if (dateDiff.days === 0) {
+          return '정상 출고';
+        } else if (dateDiff.isEarly && dateDiff.days > 0) {
+          return '조기 출고';
+        } else if (dateDiff.isDelayed && dateDiff.days > 0) {
+          return '출고 연기';
+        }
+      }
+      // 날짜 차이 계산이 안 되는 경우 기본적으로 '출고 완료' 반환
+      return '출고 완료';
+    }
+
     // GMT+9 시간대 기준 현재 날짜와 공장출고 예상일 비교
     const today = getCurrentKSTDate();
     const expectedDate = new Date(project.expected_factory_shipping_date);
@@ -129,39 +133,16 @@ const FactoryShip = ({ project, onDateChange, handleMultipleUpdates, isAdmin, is
     expectedDate.setHours(0, 0, 0, 0);
     
     // 현재 날짜가 예상일보다 빠르면 '출고 대기'
-    if (today < expectedDate && !project?.actual_factory_shipping_date) {
+    if (today < expectedDate) {
       return '출고 대기';
     }
     
-    // actual_order_date가 null이 아니고, actual_factory_shipping_date가 null이면서, 
-    // 현재 기준 날짜가 출고 예상일보다 늦어졌다면 '출고 연기'
-    if (project?.actual_order_date && !project?.actual_factory_shipping_date && today > expectedDate) {
+    // 현재 날짜가 예상일보다 늦으면 '출고 연기'
+    if (today > expectedDate) {
       return '출고 연기';
     }
-
-    // actual_factory_shipping_date가 설정되지 않았으면 '출고 대기'
-    if (!project?.actual_factory_shipping_date) {
-      return '출고 대기';
-    }
-
-    // actual_order_date가 null이 아니고, actual_factory_shipping_date가 null이 아닐 때,
-    // 현재 기준 날짜와 출고 예상일이 같다면 '정상 출고'
-    if (project?.actual_order_date && project?.actual_factory_shipping_date && today.getTime() === expectedDate.getTime()) {
-      return '정상 출고';
-    }
-
-    // 예상일과 실제일 비교하여 상태 계산
-    const dateDiff = calculateDateDifference();
-    if (dateDiff) {
-      if (dateDiff.days === 0) {
-        return '정상 출고';
-      } else if (dateDiff.isEarly && dateDiff.days > 0) {
-        return '조기 출고';
-      } else if (dateDiff.isDelayed && dateDiff.days > 0) {
-        return '출고 연기';
-      }
-    }
     
+    // 현재 날짜가 예상일과 같으면 '출고 대기' (아직 출고하지 않음)
     return '출고 대기';
   };
 
@@ -199,22 +180,22 @@ const FactoryShip = ({ project, onDateChange, handleMultipleUpdates, isAdmin, is
         return <span className="text-gray-500">발주 미완료</span>;
       } else if (!project?.expected_factory_shipping_date) {
         return <span className="text-gray-500">예상일 미계산</span>;
-             } else {
-         const today = getCurrentKSTDate();
-         const expectedDate = new Date(project.expected_factory_shipping_date);
-         today.setHours(0, 0, 0, 0);
-         expectedDate.setHours(0, 0, 0, 0);
-         
-         if (today < expectedDate) {
-           const daysUntilExpected = Math.ceil((expectedDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
-           return <span className="text-yellow-600">출고 대기 ({daysUntilExpected}일 남음)</span>;
-         } else if (project?.actual_order_date && !project?.actual_factory_shipping_date && today > expectedDate) {
-           const daysDelayed = Math.ceil((today.getTime() - expectedDate.getTime()) / (1000 * 3600 * 24));
-           return <span className="text-orange-600 font-medium">출고연기 ({daysDelayed}일 연기)</span>;
-         } else if (!project?.actual_factory_shipping_date) {
-           return <span className="text-yellow-600">출고 대기</span>;
-         }
-       }
+      } else {
+        const today = getCurrentKSTDate();
+        const expectedDate = new Date(project.expected_factory_shipping_date);
+        today.setHours(0, 0, 0, 0);
+        expectedDate.setHours(0, 0, 0, 0);
+        
+        if (today < expectedDate) {
+          const daysUntilExpected = Math.ceil((expectedDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+          return <span className="text-yellow-600">출고 대기 ({daysUntilExpected}일 남음)</span>;
+        } else if (today > expectedDate) {
+          const daysDelayed = Math.ceil((today.getTime() - expectedDate.getTime()) / (1000 * 3600 * 24));
+          return <span className="text-orange-600 font-medium">출고연기 ({daysDelayed}일 연기)</span>;
+        } else {
+          return <span className="text-yellow-600">출고 대기</span>;
+        }
+      }
     }
 
     return <span className="text-yellow-600">출고 대기</span>;
@@ -285,17 +266,17 @@ const FactoryShip = ({ project, onDateChange, handleMultipleUpdates, isAdmin, is
           // DB에 저장된 expected_factory_shipping_date가 있으면 우선 표시
           <div className="space-y-1">
             <span className="text-gray-900 font-medium">
-              {formatDate(project.expected_factory_shipping_date)}
+              {formatDateString(project.expected_factory_shipping_date)}
             </span>
           </div>
         ) : calculatedExpectedDate ? (
           // DB 값이 없으면 계산된 값 표시
           <div className="space-y-1">
             <span className="text-gray-900 font-medium">
-              {formatDate(calculatedExpectedDate)}
+              {formatDateString(calculatedExpectedDate)}
             </span>
             <div className="text-xs text-gray-500">
-              발주일({formatDate(project.actual_order_date)}) + {project?.factory_delivery_days || 7}일
+              발주일({formatDateString(project.actual_order_date)}) + {project?.factory_delivery_days || 7}일
             </div>
           </div>
         ) : (
@@ -314,7 +295,7 @@ const FactoryShip = ({ project, onDateChange, handleMultipleUpdates, isAdmin, is
           className={`w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
             isDateInputDisabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'
           }`}
-          value={formatDate(project?.actual_factory_shipping_date) || ''}
+          value={formatDateString(project?.actual_factory_shipping_date) || ''}
           onChange={(e) => {
             handleDateChange('actual_factory_shipping_date', e.target.value);
           }}
