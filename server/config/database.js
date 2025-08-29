@@ -226,6 +226,309 @@ const migratePaymentColumns = async () => {
   }
 };
 
+// mj_project 테이블 entry_quantity, export_quantity 필드 마이그레이션 함수
+async function migrateMJProjectQuantityFields() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 mj_project 테이블 quantity 필드 마이그레이션 시작...');
+    
+    // entry_quantity 필드 존재 여부 확인
+    const [entryQuantityColumns] = await connection.execute(
+      "SHOW COLUMNS FROM mj_project LIKE 'entry_quantity'"
+    );
+    
+    // export_quantity 필드 존재 여부 확인
+    const [exportQuantityColumns] = await connection.execute(
+      "SHOW COLUMNS FROM mj_project LIKE 'export_quantity'"
+    );
+    
+    // remain_quantity 필드 존재 여부 확인
+    const [remainQuantityColumns] = await connection.execute(
+      "SHOW COLUMNS FROM mj_project LIKE 'remain_quantity'"
+    );
+    
+    // entry_quantity 필드가 없으면 추가
+    if (entryQuantityColumns.length === 0) {
+      await connection.execute(`
+        ALTER TABLE mj_project 
+        ADD COLUMN entry_quantity INT DEFAULT 0 COMMENT '입고 수량'
+      `);
+      console.log('✅ entry_quantity 필드 추가 완료');
+    } else {
+      console.log('ℹ️ entry_quantity 필드가 이미 존재합니다.');
+    }
+    
+    // export_quantity 필드가 없으면 추가
+    if (exportQuantityColumns.length === 0) {
+      await connection.execute(`
+        ALTER TABLE mj_project 
+        ADD COLUMN export_quantity INT DEFAULT 0 COMMENT '출고 수량'
+      `);
+      console.log('✅ export_quantity 필드 추가 완료');
+    } else {
+      console.log('ℹ️ export_quantity 필드가 이미 존재합니다.');
+    }
+    
+    // remain_quantity 필드가 없으면 추가
+    if (remainQuantityColumns.length === 0) {
+      await connection.execute(`
+        ALTER TABLE mj_project 
+        ADD COLUMN remain_quantity INT DEFAULT 0 COMMENT '잔여 수량 (입고 - 출고)'
+      `);
+      console.log('✅ remain_quantity 필드 추가 완료');
+    } else {
+      console.log('ℹ️ remain_quantity 필드가 이미 존재합니다.');
+    }
+    
+    // 기존 데이터에 대한 초기값 설정
+    if (entryQuantityColumns.length === 0) {
+      await connection.execute(`
+        UPDATE mj_project 
+        SET entry_quantity = 0 
+        WHERE entry_quantity IS NULL
+      `);
+      console.log('✅ entry_quantity 필드 초기값 설정 완료');
+    }
+    
+    if (exportQuantityColumns.length === 0) {
+      await connection.execute(`
+        UPDATE mj_project 
+        SET export_quantity = 0 
+        WHERE export_quantity IS NULL
+      `);
+      console.log('✅ export_quantity 필드 초기값 설정 완료');
+    }
+    
+    if (remainQuantityColumns.length === 0) {
+      await connection.execute(`
+        UPDATE mj_project 
+        SET remain_quantity = 0 
+        WHERE remain_quantity IS NULL
+      `);
+      console.log('✅ remain_quantity 필드 초기값 설정 완료');
+    }
+    
+    // 인덱스 추가
+    try {
+      await connection.execute(`
+        CREATE INDEX idx_entry_quantity ON mj_project(entry_quantity)
+      `);
+      console.log('✅ entry_quantity 인덱스 추가/확인 완료');
+    } catch (error) {
+      if (error.code === 'ER_DUP_KEYNAME') {
+        console.log('ℹ️ entry_quantity 인덱스가 이미 존재합니다.');
+      } else {
+        throw error;
+      }
+    }
+    
+    try {
+      await connection.execute(`
+        CREATE INDEX idx_export_quantity ON mj_project(export_quantity)
+      `);
+      console.log('✅ export_quantity 인덱스 추가/확인 완료');
+    } catch (error) {
+      if (error.code === 'ER_DUP_KEYNAME') {
+        console.log('ℹ️ export_quantity 인덱스가 이미 존재합니다.');
+      } else {
+        throw error;
+      }
+    }
+    
+    try {
+      await connection.execute(`
+        CREATE INDEX idx_remain_quantity ON mj_project(remain_quantity)
+      `);
+      console.log('✅ remain_quantity 인덱스 추가/확인 완료');
+    } catch (error) {
+      if (error.code === 'ER_DUP_KEYNAME') {
+        console.log('ℹ️ remain_quantity 인덱스가 이미 존재합니다.');
+      } else {
+        throw error;
+      }
+    }
+    
+    // 제약조건 추가 (기존 제약조건 확인 후 추가)
+    try {
+      // 기존 제약조건 확인
+      const [constraints] = await connection.execute(`
+        SELECT CONSTRAINT_NAME 
+        FROM information_schema.TABLE_CONSTRAINTS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'mj_project' 
+        AND CONSTRAINT_TYPE = 'CHECK'
+      `);
+      
+      const existingConstraints = constraints.map(c => c.CONSTRAINT_NAME);
+      
+      // entry_quantity 양수 제약조건
+      if (!existingConstraints.includes('chk_entry_quantity_positive')) {
+        await connection.execute(`
+          ALTER TABLE mj_project 
+          ADD CONSTRAINT chk_entry_quantity_positive CHECK (entry_quantity >= 0)
+        `);
+        console.log('✅ entry_quantity 양수 제약조건 추가 완료');
+      } else {
+        console.log('ℹ️ entry_quantity 양수 제약조건이 이미 존재합니다.');
+      }
+      
+      // export_quantity 양수 제약조건
+      if (!existingConstraints.includes('chk_export_quantity_positive')) {
+        await connection.execute(`
+          ALTER TABLE mj_project 
+          ADD CONSTRAINT chk_export_quantity_positive CHECK (export_quantity >= 0)
+        `);
+        console.log('✅ export_quantity 양수 제약조건 추가 완료');
+      } else {
+        console.log('ℹ️ export_quantity 양수 제약조건이 이미 존재합니다.');
+      }
+      
+      // export_quantity 제한 제약조건
+      if (!existingConstraints.includes('chk_export_quantity_limit')) {
+        await connection.execute(`
+          ALTER TABLE mj_project 
+          ADD CONSTRAINT chk_export_quantity_limit CHECK (export_quantity <= entry_quantity)
+        `);
+        console.log('✅ export_quantity 제한 제약조건 추가 완료');
+      } else {
+        console.log('ℹ️ export_quantity 제한 제약조건이 이미 존재합니다.');
+      }
+      
+      // remain_quantity 양수 제약조건
+      if (!existingConstraints.includes('chk_remain_quantity_positive')) {
+        await connection.execute(`
+          ALTER TABLE mj_project 
+          ADD CONSTRAINT chk_remain_quantity_positive CHECK (remain_quantity >= 0)
+        `);
+        console.log('✅ remain_quantity 양수 제약조건 추가 완료');
+      } else {
+        console.log('ℹ️ remain_quantity 양수 제약조건이 이미 존재합니다.');
+      }
+      
+    } catch (error) {
+      console.log('ℹ️ 제약조건 추가 중 오류 (무시됨):', error.message);
+    }
+    
+    return { success: true, message: 'mj_project 테이블 quantity 필드 마이그레이션이 완료되었습니다.' };
+    
+  } catch (error) {
+    console.error('❌ mj_project quantity 필드 마이그레이션 오류:', error);
+    return { success: false, error: error.message };
+  } finally {
+    connection.release();
+  }
+}
+
+// warehouse_entries 테이블 stock 필드 마이그레이션 함수
+async function migrateWarehouseStockFields() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 warehouse_entries 테이블 stock 필드 마이그레이션 시작...');
+    
+    // stock 필드 존재 여부 확인
+    const [stockColumns] = await connection.execute(
+      "SHOW COLUMNS FROM warehouse_entries LIKE 'stock'"
+    );
+
+    if (stockColumns.length === 0) {
+      // stock 필드 추가
+      await connection.execute(`
+        ALTER TABLE warehouse_entries 
+        ADD COLUMN stock INT DEFAULT 0 COMMENT '현재 재고 수량'
+      `);
+      console.log('✅ stock 필드 추가 완료');
+    } else {
+      console.log('ℹ️ stock 필드가 이미 존재합니다.');
+    }
+
+    // out_quantity 필드 존재 여부 확인
+    const [outQuantityColumns] = await connection.execute(
+      "SHOW COLUMNS FROM warehouse_entries LIKE 'out_quantity'"
+    );
+
+    if (outQuantityColumns.length === 0) {
+      // out_quantity 필드 추가
+      await connection.execute(`
+        ALTER TABLE warehouse_entries 
+        ADD COLUMN out_quantity INT DEFAULT 0 COMMENT '출고 수량'
+      `);
+      console.log('✅ out_quantity 필드 추가 완료');
+    } else {
+      console.log('ℹ️ out_quantity 필드가 이미 존재합니다.');
+    }
+
+    // 기존 데이터에 대한 초기값 설정
+    try {
+      await connection.execute(`
+        UPDATE warehouse_entries 
+        SET stock = quantity 
+        WHERE stock IS NULL OR stock = 0
+      `);
+      console.log('✅ stock 필드 초기값 설정 완료');
+    } catch (error) {
+      console.log('ℹ️ stock 필드 초기값 설정 중 오류 (무시됨):', error.message);
+    }
+
+    try {
+      await connection.execute(`
+        UPDATE warehouse_entries 
+        SET out_quantity = 0 
+        WHERE out_quantity IS NULL
+      `);
+      console.log('✅ out_quantity 필드 초기값 설정 완료');
+    } catch (error) {
+      console.log('ℹ️ out_quantity 필드 초기값 설정 중 오류 (무시됨):', error.message);
+    }
+
+    // 인덱스 추가 (성능 향상)
+    try {
+      await connection.execute('CREATE INDEX IF NOT EXISTS idx_stock ON warehouse_entries(stock)');
+      console.log('✅ stock 인덱스 추가/확인 완료');
+    } catch (error) {
+      console.log('ℹ️ stock 인덱스 추가 중 오류 (무시됨):', error.message);
+    }
+
+    try {
+      await connection.execute('CREATE INDEX IF NOT EXISTS idx_out_quantity ON warehouse_entries(out_quantity)');
+      console.log('✅ out_quantity 인덱스 추가/확인 완료');
+    } catch (error) {
+      console.log('ℹ️ out_quantity 인덱스 추가 중 오류 (무시됨):', error.message);
+    }
+
+    // 제약 조건 추가 (데이터 무결성)
+    try {
+      await connection.execute('ALTER TABLE warehouse_entries ADD CONSTRAINT chk_stock_positive CHECK (stock >= 0)');
+      console.log('✅ stock 제약조건 추가/확인 완료');
+    } catch (error) {
+      console.log('ℹ️ stock 제약조건 추가 중 오류 (무시됨):', error.message);
+    }
+
+    try {
+      await connection.execute('ALTER TABLE warehouse_entries ADD CONSTRAINT chk_out_quantity_positive CHECK (out_quantity >= 0)');
+      console.log('✅ out_quantity 제약조건 추가/확인 완료');
+    } catch (error) {
+      console.log('ℹ️ out_quantity 제약조건 추가 중 오류 (무시됨):', error.message);
+    }
+
+    try {
+      await connection.execute('ALTER TABLE warehouse_entries ADD CONSTRAINT chk_out_quantity_limit CHECK (out_quantity <= quantity)');
+      console.log('✅ out_quantity 제한 제약조건 추가/확인 완료');
+    } catch (error) {
+      console.log('ℹ️ out_quantity 제한 제약조건 추가 중 오류 (무시됨):', error.message);
+    }
+
+    return { success: true, message: 'warehouse_entries 테이블 stock 필드 마이그레이션이 완료되었습니다.' };
+    
+  } catch (error) {
+    console.error('❌ warehouse stock 필드 마이그레이션 오류:', error);
+    return { success: false, error: error.message };
+  } finally {
+    connection.release();
+  }
+}
+
 // 데이터베이스 연결 테스트 및 마이그레이션 실행
 async function initializeDatabase() {
   try {
@@ -263,6 +566,24 @@ async function initializeDatabase() {
       console.error('❌ Payment 관련 컬럼 마이그레이션 실패:', paymentMigrationResult.error);
     }
     
+    // warehouse stock 필드 마이그레이션 실행
+    console.log('🔄 warehouse stock 필드 마이그레이션 시작...');
+    const stockMigrationResult = await migrateWarehouseStockFields();
+    if (stockMigrationResult.success) {
+      console.log('✅ warehouse stock 필드 마이그레이션 완료:', stockMigrationResult.message);
+    } else {
+      console.error('❌ warehouse stock 필드 마이그레이션 실패:', stockMigrationResult.error);
+    }
+    
+    // mj_project quantity 필드 마이그레이션 실행
+    console.log('🔄 mj_project quantity 필드 마이그레이션 시작...');
+    const quantityMigrationResult = await migrateMJProjectQuantityFields();
+    if (quantityMigrationResult.success) {
+      console.log('✅ mj_project quantity 필드 마이그레이션 완료:', quantityMigrationResult.message);
+    } else {
+      console.error('❌ mj_project quantity 필드 마이그레이션 실패:', quantityMigrationResult.error);
+    }
+    
     console.log('🎉 모든 마이그레이션이 완료되었습니다!');
     
   } catch (error) {
@@ -271,7 +592,13 @@ async function initializeDatabase() {
 }
 
 // 서버 시작 시 자동으로 마이그레이션 실행
-initializeDatabase();
+console.log('🚀 서버 시작 시 자동 마이그레이션을 시작합니다...');
+initializeDatabase().then(() => {
+  console.log('✅ 자동 마이그레이션이 완료되었습니다. 서버가 정상적으로 시작됩니다.');
+}).catch((error) => {
+  console.error('❌ 자동 마이그레이션 중 오류가 발생했습니다:', error);
+  console.log('⚠️ 서버는 계속 실행되지만, 일부 기능이 제한될 수 있습니다.');
+});
 
 // 연결 테스트 함수
 const testConnection = async () => {
@@ -298,5 +625,8 @@ const testConnection = async () => {
 
 module.exports = {
   pool,
-  testConnection
+  testConnection,
+  initializeDatabase,
+  migrateWarehouseStockFields,
+  migrateMJProjectQuantityFields
 }; 

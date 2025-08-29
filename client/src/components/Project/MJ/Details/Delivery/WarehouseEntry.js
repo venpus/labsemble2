@@ -99,6 +99,11 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
                                   if (response.ok) {
           const result = await response.json();
           
+          console.log('🔄 [loadWarehouseEntries] DB에서 입고기록 로드 완료:', {
+            totalEntries: result.entries?.length || 0,
+            entries: result.entries
+          });
+          
           if (result.entries && result.entries.length > 0) {
               // DB에서 로드한 데이터를 로컬 상태에 설정
               const loadedEntries = result.entries.map(entry => {
@@ -115,11 +120,40 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
                 };
               });
               
-              setWarehouseEntries(loadedEntries);
+              console.log('✅ [loadWarehouseEntries] 매핑된 입고기록:', {
+                totalLoaded: loadedEntries.length,
+                loadedEntries: loadedEntries.map(entry => ({
+                  id: entry.id,
+                  date: entry.date,
+                  shippingDate: entry.shippingDate,
+                  quantity: entry.quantity,
+                  createdAt: entry.createdAt
+                }))
+              });
+              
+              // 생성 시간 순으로 정렬 (먼저 기록된 순서대로)
+              const sortedEntries = loadedEntries.sort((a, b) => {
+                const dateA = new Date(a.createdAt || 0);
+                const dateB = new Date(b.createdAt || 0);
+                return dateA - dateB; // 오름차순 정렬 (과거 → 최신)
+              });
+              
+              console.log('🔄 [loadWarehouseEntries] 정렬된 입고기록:', {
+                sortedEntries: sortedEntries.map(entry => ({
+                  id: entry.id,
+                  date: entry.date,
+                  createdAt: entry.createdAt
+                }))
+              });
+              
+              setWarehouseEntries(sortedEntries);
           } else {
             // DB에 저장된 항목이 없는 경우 초기 상태 유지
             // 기존 로컬 상태에서 새로 생성된 항목만 유지
             const existingNewEntries = warehouseEntries.filter(entry => entry.isNew);
+            console.log('ℹ️ [loadWarehouseEntries] DB에 저장된 항목이 없음, 기존 새 항목 유지:', {
+              existingNewEntries: existingNewEntries.length
+            });
           }
         }
       } catch (error) {
@@ -166,10 +200,41 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       quantity: '',
       images: [],
       isNew: true, // 새로 생성된 항목임을 표시
-      status: '입고중'
+      status: '입고중',
+      createdAt: new Date().toISOString() // 현재 시간을 생성 시간으로 설정
     };
 
-    setWarehouseEntries(prev => [...prev, newEntry]);
+    console.log('➕ [addWarehouseEntry] 새로운 입고 기록 행 추가:', {
+      newEntry,
+      currentTotal: warehouseEntries.length
+    });
+
+    setWarehouseEntries(prev => {
+      const updatedEntries = [...prev, newEntry];
+      
+      // 생성 시간 순으로 정렬 (먼저 기록된 순서대로)
+      const sortedEntries = updatedEntries.sort((a, b) => {
+        // isNew가 true인 항목은 맨 뒤에 배치
+        if (a.isNew && !b.isNew) return 1;
+        if (!a.isNew && b.isNew) return -1;
+        
+        // 둘 다 isNew가 true이거나 false인 경우 생성 시간으로 정렬
+        const dateA = new Date(a.createdAt || 0);
+        const dateB = new Date(b.createdAt || 0);
+        return dateA - dateB; // 오름차순 정렬 (과거 → 최신)
+      });
+      
+      console.log('🔄 [addWarehouseEntry] 정렬된 입고기록:', {
+        totalEntries: sortedEntries.length,
+        sortedEntries: sortedEntries.map(entry => ({
+          id: entry.id,
+          isNew: entry.isNew,
+          createdAt: entry.createdAt
+        }))
+      });
+      
+      return sortedEntries;
+    });
     toast.success('새로운 입고 기록 행이 추가되었습니다. 데이터를 입력하고 저장해주세요.');
   }, [warehouseEntries.length]);
 
@@ -246,6 +311,11 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       return;
     }
 
+    console.log('🔄 [handleSaveEntry] 입고기록 수동 저장 시작:', {
+      entryId,
+      entry: { date: entry.date, shippingDate: entry.shippingDate, quantity: entry.quantity }
+    });
+
     try {
   
 
@@ -254,6 +324,13 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       if (!token) {
         throw new Error('인증 토큰이 없습니다. 다시 로그인해주세요.');
       }
+
+      console.log('📤 [handleSaveEntry] 서버로 입고기록 전송:', {
+        projectId: project.id,
+        entryDate: entry.date,
+        shippingDate: entry.shippingDate,
+        quantity: parseInt(entry.quantity)
+      });
 
       const response = await fetch('/api/warehouse/entries', {
         method: 'POST',
@@ -276,6 +353,8 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
 
       const result = await response.json();
       
+      console.log('✅ [handleSaveEntry] 서버 응답 성공:', result);
+      
       // 서버에서 반환된 데이터로 업데이트
       setWarehouseEntries(prev => prev.map(e => 
         e.id === entryId 
@@ -293,7 +372,12 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
           : e
       ));
 
+      console.log('🔄 [handleSaveEntry] 로컬 상태 업데이트 완료, entry_quantity 업데이트 시작');
+
       toast.success('입고기록이 성공적으로 저장되었습니다! 🎉');
+
+      // 입고기록 저장 후 프로젝트의 entry_quantity 업데이트
+      await updateProjectEntryQuantity();
 
     } catch (error) {
       toast.error(`입고기록 저장에 실패했습니다: ${error.message}`);
@@ -311,6 +395,11 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       return;
     }
 
+    console.log('🔄 [handleUpdateEntry] 입고기록 업데이트 시작:', {
+      entryId,
+      entry: { date: entry.date, shippingDate: entry.shippingDate, quantity: entry.quantity }
+    });
+
     try {
 
 
@@ -319,6 +408,13 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       if (!token) {
         throw new Error('인증 토큰이 없습니다. 다시 로그인해주세요.');
       }
+
+      console.log('📤 [handleUpdateEntry] 서버로 입고기록 업데이트 전송:', {
+        entryId,
+        entryDate: entry.date,
+        shippingDate: entry.shippingDate,
+        quantity: parseInt(entry.quantity)
+      });
 
       const response = await fetch(`/api/warehouse/entries/${entryId}`, {
         method: 'PUT',
@@ -340,6 +436,8 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
 
       const result = await response.json();
       
+      console.log('✅ [handleUpdateEntry] 서버 응답 성공:', result);
+      
       // 서버에서 반환된 데이터로 업데이트
       setWarehouseEntries(prev => prev.map(e => 
         e.id === entryId 
@@ -354,9 +452,12 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
           : e
       ));
 
+      console.log('🔄 [handleUpdateEntry] 로컬 상태 업데이트 완료, entry_quantity 업데이트 시작');
+
       toast.success('입고기록이 성공적으로 업데이트되었습니다! ✨');
-      
-      toast.success('입고기록이 성공적으로 업데이트되었습니다! ✨');
+
+      // 입고기록 업데이트 후 프로젝트의 entry_quantity 업데이트
+      await updateProjectEntryQuantity();
 
     } catch (error) {
       toast.error(`입고기록 업데이트에 실패했습니다: ${error.message}`);
@@ -373,6 +474,11 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       return; // 자동 저장 시에는 에러 메시지 표시하지 않음
     }
 
+    console.log('🔄 [saveWarehouseEntry] 입고기록 저장 시작:', {
+      entryId,
+      entry: { date: entry.date, shippingDate: entry.shippingDate, quantity: entry.quantity }
+    });
+
     try {
 
 
@@ -381,6 +487,13 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       if (!token) {
         throw new Error('인증 토큰이 없습니다. 다시 로그인해주세요.');
       }
+
+      console.log('📤 [saveWarehouseEntry] 서버로 입고기록 전송:', {
+        projectId: project.id,
+        entryDate: entry.date,
+        shippingDate: entry.shippingDate,
+        quantity: parseInt(entry.quantity)
+      });
 
       const response = await fetch('/api/warehouse/entries', {
         method: 'POST',
@@ -403,6 +516,8 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
 
       const result = await response.json();
       
+      console.log('✅ [saveWarehouseEntry] 서버 응답 성공:', result);
+      
       // 서버에서 반환된 실제 ID와 데이터로 업데이트
       setWarehouseEntries(prev => prev.map(e => 
         e.id === entryId 
@@ -420,8 +535,13 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
           : e
       ));
 
+      console.log('🔄 [saveWarehouseEntry] 로컬 상태 업데이트 완료, entry_quantity 업데이트 시작');
+
       // 자동 저장 성공 시 사용자에게 알림
       toast.success('입고기록이 자동으로 저장되었습니다! 🎉');
+
+      // 입고기록 저장 후 프로젝트의 entry_quantity 업데이트
+      await updateProjectEntryQuantity();
 
     } catch (error) {
       // 자동 저장 실패 시 사용자에게 알림 (선택사항)
@@ -485,8 +605,9 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       ));
 
       toast.success('입고기록이 성공적으로 저장되었습니다.');
-      
 
+      // 입고기록 저장 후 프로젝트의 entry_quantity 업데이트
+      await updateProjectEntryQuantity();
 
     } catch (error) {
       toast.error(`입고기록 저장에 실패했습니다: ${error.message}`);
@@ -546,8 +667,9 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       ));
 
       toast.success('입고기록이 성공적으로 수정되었습니다.');
-      
-      toast.success('입고기록이 성공적으로 수정되었습니다.');
+
+      // 입고기록 수정 후 프로젝트의 entry_quantity 업데이트
+      await updateProjectEntryQuantity();
 
     } catch (error) {
       toast.error(`입고기록 수정에 실패했습니다: ${error.message}`);
@@ -587,13 +709,90 @@ const WarehouseEntry = ({ project, isAdmin, isAdminLoading, onDeliveryStatusChan
       setWarehouseEntries(prev => prev.filter(e => e.id !== entryId));
       
       toast.success('입고기록이 성공적으로 삭제되었습니다.');
-      
 
+      // 입고기록 삭제 후 프로젝트의 entry_quantity 업데이트
+      await updateProjectEntryQuantity();
 
     } catch (error) {
       toast.error(`입고기록 삭제에 실패했습니다: ${error.message}`);
     }
   }, [warehouseEntries]);
+
+  // 프로젝트의 entry_quantity 업데이트 (warehouse_entries의 quantity 합산)
+  const updateProjectEntryQuantity = useCallback(async () => {
+    console.log('🔄 [updateProjectEntryQuantity] 프로젝트 entry_quantity 업데이트 시작');
+    
+    try {
+      // 인증 토큰 가져오기
+      const token = getAuthToken();
+      if (!token) {
+        console.log('❌ [updateProjectEntryQuantity] 인증 토큰이 없어서 entry_quantity 업데이트를 건너뜁니다.');
+        return;
+      }
+
+      console.log('📤 [updateProjectEntryQuantity] 서버에서 warehouse_entries quantity 합산 조회 시작:', {
+        projectId: project.id,
+        url: `/api/warehouse/project/${project.id}/total-quantity`
+      });
+
+      // 서버에서 해당 프로젝트의 warehouse_entries quantity를 모두 조회하여 합산
+      const response = await fetch(`/api/warehouse/project/${project.id}/total-quantity`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ [updateProjectEntryQuantity] warehouse entries quantity 조회 실패:', errorData.error);
+        return;
+      }
+
+      const result = await response.json();
+      const totalQuantity = result.total_quantity || 0;
+
+      console.log('✅ [updateProjectEntryQuantity] 서버에서 조회한 총 quantity:', {
+        totalQuantity,
+        response: result
+      });
+
+      console.log('📤 [updateProjectEntryQuantity] 프로젝트 entry_quantity 업데이트 전송:', {
+        projectId: project.id,
+        entry_quantity: totalQuantity,
+        url: `/api/mj-project/${project.id}/entry-quantity`
+      });
+
+      // 프로젝트의 entry_quantity 업데이트
+      const updateResponse = await fetch(`/api/mj-project/${project.id}/entry-quantity`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          entry_quantity: totalQuantity
+        })
+      });
+
+      if (!updateResponse.ok) {
+        const errorData = await updateResponse.json();
+        console.error('❌ [updateProjectEntryQuantity] entry_quantity 업데이트 실패:', errorData.error);
+        return;
+      }
+
+      const updateResult = await updateResponse.json();
+      console.log('✅ [updateProjectEntryQuantity] entry_quantity 업데이트 성공:', updateResult);
+
+      // 부모 컴포넌트에 업데이트 알림 (필요시)
+      if (onDeliveryStatusChange) {
+        onDeliveryStatusChange('입고중');
+      }
+
+    } catch (error) {
+      console.error('entry_quantity 업데이트 중 오류:', error);
+    }
+  }, [project.id, onDeliveryStatusChange]);
 
   // 특정 행에 이미지 업로드
   const handleImageUpload = useCallback(async (event, entryId) => {

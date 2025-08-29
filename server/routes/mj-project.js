@@ -928,6 +928,180 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
   }
 });
 
+// MJ 프로젝트 패킹리스트 생성
+router.post('/:id/packing-list', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { packingMethod, boxDimensions, boxWeight } = req.body;
+    
+    // 프로젝트 존재 여부 확인
+    const [projects] = await pool.execute(
+      'SELECT * FROM mj_project WHERE id = ?',
+      [id]
+    );
+    
+    if (projects.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    const project = projects[0];
+    
+    // 패킹리스트 정보 업데이트
+    await pool.execute(`
+      UPDATE mj_project 
+      SET 
+        packing_method = ?,
+        box_dimensions = ?,
+        box_weight = ?,
+        packing_list_created = 1,
+        updated_at = NOW()
+      WHERE id = ?
+    `, [packingMethod, boxDimensions, boxWeight, id]);
+    
+    // 패킹리스트 PDF 생성 로직 (실제 구현에서는 PDF 생성 라이브러리 사용)
+    // 여기서는 간단한 JSON 응답으로 대체
+    
+    res.json({ 
+      success: true, 
+      message: '패킹리스트가 생성되었습니다.',
+      packingList: {
+        projectId: id,
+        projectName: project.project_name,
+        quantity: project.quantity,
+        packingMethod,
+        boxDimensions,
+        boxWeight,
+        createdAt: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('패킹리스트 생성 오류:', error);
+    res.status(500).json({ error: '패킹리스트 생성 중 오류가 발생했습니다.' });
+  }
+});
+
+// MJ 프로젝트 패킹리스트 삭제
+router.delete('/:id/packing-list', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // 패킹리스트 정보 초기화
+    await pool.execute(`
+      UPDATE mj_project 
+      SET 
+        packing_method = NULL,
+        box_dimensions = NULL,
+        box_weight = NULL,
+        packing_list_created = 0,
+        updated_at = NOW()
+      WHERE id = ?
+    `, [id]);
+    
+    res.json({ 
+      success: true, 
+      message: '패킹리스트가 삭제되었습니다.' 
+    });
+    
+  } catch (error) {
+    console.error('패킹리스트 삭제 오류:', error);
+    res.status(500).json({ error: '패킹리스트 삭제 중 오류가 발생했습니다.' });
+  }
+});
+
+// MJ 프로젝트 entry_quantity 업데이트
+router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { entry_quantity } = req.body;
+    
+    console.log('🔄 [mj-project] entry_quantity 업데이트 시작:', { 
+      projectId: id, 
+      entry_quantity,
+      requestBody: req.body 
+    });
+    
+    // 프로젝트 존재 여부 확인
+    const [projects] = await pool.execute(
+      'SELECT id, project_name FROM mj_project WHERE id = ?',
+      [id]
+    );
+    
+    if (projects.length === 0) {
+      console.log('❌ [mj-project] 프로젝트를 찾을 수 없음:', { projectId: id });
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    console.log('✅ [mj-project] 프로젝트 확인 완료:', { 
+      projectId: id, 
+      projectName: projects[0].project_name 
+    });
+    
+    // entry_quantity 업데이트
+    await pool.execute(`
+      UPDATE mj_project 
+      SET 
+        entry_quantity = ?,
+        updated_at = NOW()
+      WHERE id = ?
+    `, [entry_quantity, id]);
+    
+    console.log('✅ [mj-project] entry_quantity 업데이트 완료:', { 
+      projectId: id, 
+      entry_quantity 
+    });
+    
+    // remain_quantity도 자동으로 계산하여 업데이트
+    const [projectData] = await pool.execute(
+      'SELECT export_quantity FROM mj_project WHERE id = ?',
+      [id]
+    );
+    
+    const export_quantity = projectData[0]?.export_quantity || 0;
+    const remain_quantity = Math.max(0, entry_quantity - export_quantity);
+    
+    console.log('🔄 [mj-project] remain_quantity 계산:', { 
+      projectId: id, 
+      entry_quantity, 
+      export_quantity, 
+      remain_quantity 
+    });
+    
+    await pool.execute(`
+      UPDATE mj_project 
+      SET 
+        remain_quantity = ?,
+        updated_at = NOW()
+      WHERE id = ?
+    `, [remain_quantity, id]);
+    
+    console.log('✅ [mj-project] remain_quantity 업데이트 완료:', { 
+      projectId: id, 
+      remain_quantity 
+    });
+    
+    const responseData = {
+      project_id: id,
+      entry_quantity,
+      export_quantity,
+      remain_quantity,
+      updated_at: new Date().toISOString()
+    };
+    
+    console.log('✅ [mj-project] entry_quantity 업데이트 완료, 응답:', responseData);
+    
+    res.json({ 
+      success: true, 
+      message: 'entry_quantity가 업데이트되었습니다.',
+      data: responseData
+    });
+    
+  } catch (error) {
+    console.error('❌ [mj-project] entry_quantity 업데이트 오류:', error);
+    res.status(500).json({ error: 'entry_quantity 업데이트 중 오류가 발생했습니다.' });
+  }
+});
+
 // MJ 프로젝트 삭제
 router.delete('/:id', async (req, res) => {
   const connection = await pool.getConnection();

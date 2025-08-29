@@ -8,7 +8,8 @@ import {
   Building,
   Users,
   Shield,
-  Calendar
+  Calendar,
+  Package
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -92,6 +93,15 @@ const Sidebar = ({ selectedMenu, setSelectedMenu }) => {
     description: 'MJ 프로젝트 일정 및 캘린더 관리'
   };
 
+  // MJ 패킹리스트 메뉴 (admin 또는 MJ유통 파트너 사용자)
+  const mjPackingListMenuItem = {
+    id: 'mj-packing-list',
+    label: 'MJ 패킹리스트',
+    icon: Package,
+    path: '/dashboard/mj-packing-list',
+    description: 'MJ 프로젝트 패킹리스트 관리'
+  };
+
   // 메뉴 아이템 결합 (관리자인 경우 회사정보 제외하고 관리자 메뉴 추가)
   const getMenuItems = () => {
     let menuItems = [];
@@ -131,6 +141,30 @@ const Sidebar = ({ selectedMenu, setSelectedMenu }) => {
         } else {
           // 설정 메뉴가 없으면 맨 뒤에 추가
           menuItems.push(mjCalendarMenuItem);
+        }
+      }
+    }
+
+    // MJ 패킹리스트 메뉴를 MJ 캘린더 메뉴 다음에 삽입 (admin 또는 MJ유통 파트너 사용자)
+    if (isAdmin || user?.partnerName === 'MJ유통') {
+      // MJ 캘린더 메뉴의 인덱스를 찾아서 그 다음에 MJ 패킹리스트 메뉴 삽입
+      const mjCalendarIndex = menuItems.findIndex(item => item.id === 'mj-calendar');
+      if (mjCalendarIndex !== -1) {
+        menuItems.splice(mjCalendarIndex + 1, 0, mjPackingListMenuItem);
+      } else {
+        // MJ 캘린더 메뉴가 없으면 MJ 프로젝트 메뉴 다음에 추가
+        const mjProjectIndex = menuItems.findIndex(item => item.id === 'mj-projects');
+        if (mjProjectIndex !== -1) {
+          menuItems.splice(mjProjectIndex + 1, 0, mjPackingListMenuItem);
+        } else {
+          // MJ 프로젝트 메뉴가 없으면 설정 메뉴 위에 추가
+          const settingsIndex = menuItems.findIndex(item => item.id === 'settings');
+          if (settingsIndex !== -1) {
+            menuItems.splice(settingsIndex, 0, mjPackingListMenuItem);
+          } else {
+            // 설정 메뉴가 없으면 맨 뒤에 추가
+            menuItems.push(mjPackingListMenuItem);
+          }
         }
       }
     }

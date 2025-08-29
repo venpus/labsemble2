@@ -80,7 +80,7 @@ router.get('/project/:projectId/entries', authMiddleware, async (req, res) => {
     const [entries] = await connection.execute(`
       SELECT * FROM warehouse_entries 
       WHERE project_id = ?
-      ORDER BY entry_date DESC, created_at DESC
+      ORDER BY created_at ASC
     `, [projectId]);
     
     // 각 입고기록에 연결된 이미지 정보도 함께 조회
@@ -583,6 +583,288 @@ router.get('/project/:projectId/images', authMiddleware, async (req, res) => {
     console.error('❌ Warehouse 이미지 목록 조회 오류:', error);
     res.status(500).json({ 
       error: '이미지 목록 조회 중 오류가 발생했습니다.',
+      details: error.message 
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// 프로젝트별 warehouse_entries의 총 quantity 조회
+router.get('/project/:projectId/total-quantity', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const { projectId } = req.params;
+    
+    console.log('🔄 [warehouse] 프로젝트별 총 quantity 조회 시작:', { projectId });
+    
+    // 해당 프로젝트의 warehouse_entries에서 quantity 합산
+    const [result] = await connection.execute(`
+      SELECT COALESCE(SUM(quantity), 0) as total_quantity
+      FROM warehouse_entries 
+      WHERE project_id = ?
+    `, [projectId]);
+    
+    const totalQuantity = result[0]?.total_quantity || 0;
+    
+    console.log('✅ [warehouse] 프로젝트별 총 quantity 조회 완료:', {
+      projectId,
+      totalQuantity,
+      rawResult: result
+    });
+    
+    res.json({
+      success: true,
+      project_id: projectId,
+      total_quantity: totalQuantity,
+      message: '프로젝트별 총 quantity 조회 완료'
+    });
+    
+  } catch (error) {
+    console.error('❌ [warehouse] 프로젝트별 총 quantity 조회 오류:', error);
+    res.status(500).json({ 
+      error: '프로젝트별 총 quantity 조회 중 오류가 발생했습니다.',
+      details: error.message 
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// 이미지 프록시 엔드포인트 (CORS 문제 해결용)
+router.get('/image/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const fs = require('fs');
+    const path = require('path');
+    
+    const imagePath = path.join(__dirname, '../uploads/project/mj/registImage', filename);
+    
+    // 파일 존재 확인
+    if (!fs.existsSync(imagePath)) {
+      return res.status(404).json({ error: '이미지를 찾을 수 없습니다.' });
+    }
+    
+    // 파일 읽기
+    const imageBuffer = fs.readFileSync(imagePath);
+    const stats = fs.statSync(imagePath);
+    
+    // MIME 타입 추정
+    const ext = path.extname(filename).toLowerCase();
+    let mimeType = 'image/jpeg'; // 기본값
+    if (ext === '.png') mimeType = 'image/png';
+    else if (ext === '.gif') mimeType = 'image/gif';
+    else if (ext === '.webp') mimeType = 'image/webp';
+    
+    // CORS 헤더 설정
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    
+    // 이미지 응답
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1년 캐시
+    res.send(imageBuffer);
+    
+  } catch (error) {
+    console.error('❌ [warehouse] 이미지 프록시 오류:', error);
+    res.status(500).json({ error: '이미지 로드 중 오류가 발생했습니다.' });
+  }
+});
+
+// mj_project에서 entry_quantity > 0인 프로젝트 목록 조회 (패킹리스트용)
+router.get('/products-with-entry-quantity', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 [warehouse] entry_quantity > 0인 프로젝트 목록 조회 시작');
+    
+    // mj_project에서 entry_quantity > 0인 프로젝트들을 조회
+    const [products] = await connection.execute(`
+      SELECT 
+        mp.id as project_id,
+        mp.project_name,
+        mp.description as product_description,
+        mp.quantity as project_quantity,
+        mp.target_price,
+        mp.status as project_status,
+        mp.entry_quantity,
+        mp.export_quantity,
+        mp.remain_quantity,
+        mp.created_at,
+        mp.updated_at
+      FROM mj_project mp
+      WHERE mp.entry_quantity > 0
+      ORDER BY mp.project_name ASC, mp.description ASC
+    `);
+
+    // 각 프로젝트에 연결된 첫 번째 이미지 정보도 함께 조회
+    const responseData = await Promise.all(products.map(async (product) => {
+      // 해당 프로젝트의 첫 번째 이미지 조회 (mj_project_images 테이블 사용)
+      const [images] = await connection.execute(`
+        SELECT id, file_name, file_path, original_name, created_at
+        FROM mj_project_images 
+        WHERE project_id = ?
+        ORDER BY created_at ASC
+        LIMIT 1
+      `, [product.project_id]);
+
+      // firstImage 변수 정의
+      const firstImage = images.length > 0 ? images[0] : null;
+
+      // 이미지 파일 경로 검증
+      if (firstImage) {
+        const fs = require('fs');
+        const path = require('path');
+        const imagePath = path.join(__dirname, '../uploads/project/mj/registImage', firstImage.file_name);
+        
+        try {
+          const fileExists = fs.existsSync(imagePath);
+          console.log(`🔍 [warehouse] 이미지 파일 존재 확인:`, {
+            projectId: product.project_id,
+            fileName: firstImage.file_name,
+            fullPath: imagePath,
+            exists: fileExists,
+            fileSize: fileExists ? fs.statSync(imagePath).size : 'N/A'
+          });
+        } catch (error) {
+          console.log(`❌ [warehouse] 이미지 파일 확인 중 오류:`, {
+            projectId: product.project_id,
+            fileName: firstImage.file_name,
+            error: error.message
+          });
+        }
+      }
+      
+      console.log(`🖼️ [warehouse] 프로젝트 ${product.project_id} 이미지 조회:`, {
+        projectId: product.project_id,
+        projectName: product.project_name,
+        imageFound: !!firstImage,
+        imageData: firstImage,
+        totalImages: images.length
+      });
+
+      const responseDataItem = {
+        project_id: product.project_id,
+        project_name: product.project_name,
+        product_name: product.product_description || product.project_name,
+        description: product.product_description,
+        project_quantity: product.project_quantity,
+        target_price: product.target_price,
+        project_status: product.project_status,
+        entry_quantity: product.entry_quantity,
+        export_quantity: product.export_quantity,
+        remain_quantity: product.remain_quantity,
+        created_at: product.created_at,
+        updated_at: product.updated_at,
+        // 첫 번째 이미지 정보 추가 (프록시 엔드포인트 사용)
+        first_image: firstImage ? {
+          id: firstImage.id,
+          original_filename: firstImage.original_name,
+          stored_filename: firstImage.file_name, // file_name 사용
+          file_path: firstImage.file_path, // file_path 저장
+          created_at: firstImage.created_at,
+          // 프록시 엔드포인트를 통해 이미지 제공 (CORS 문제 해결)
+          url: `/api/warehouse/image/${firstImage.file_name}`,
+          thumbnail_url: `/api/warehouse/image/${firstImage.file_name}`
+        } : null
+      };
+
+      // 이미지 정보 로깅 추가
+      if (firstImage) {
+        console.log(`🖼️ [warehouse] 프로젝트 ${product.project_id} 이미지 URL 생성:`, {
+          projectId: product.project_id,
+          projectName: product.project_name,
+          originalName: firstImage.original_name,
+          fileName: firstImage.file_name,
+          filePath: firstImage.file_path,
+          generatedUrl: `/uploads/project/mj/registImage/${firstImage.file_name}`,
+          finalUrl: `/uploads/project/mj/registImage/${firstImage.file_name}`
+        });
+      }
+
+      return responseDataItem;
+    }));
+
+    console.log('✅ [warehouse] entry_quantity > 0인 프로젝트 조회 완료:', {
+      totalProjects: products.length,
+      projects: products.map(p => ({
+        id: p.project_id,
+        name: p.project_name,
+        entry_quantity: p.entry_quantity
+      }))
+    });
+
+
+
+    res.json({
+      success: true,
+      products: responseData,
+      message: 'entry_quantity > 0인 프로젝트 목록 조회 완료'
+    });
+
+  } catch (error) {
+    console.error('❌ [warehouse] entry_quantity > 0인 프로젝트 목록 조회 오류:', error);
+    res.status(500).json({ 
+      error: 'entry_quantity > 0인 프로젝트 목록 조회 중 오류가 발생했습니다.',
+      details: error.message 
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// 재고가 있는 상품 목록 조회 (패킹리스트용) - 기존 코드 유지
+router.get('/products-with-stock', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    // warehouse_entries에서 stock > 0인 상품들을 조회 (재고가 있는 상품만)
+    // mj_project와 JOIN하여 프로젝트 정보도 함께 가져옴
+    const [products] = await connection.execute(`
+      SELECT DISTINCT
+        mp.id as project_id,
+        mp.project_name,
+        mp.description as product_description,
+        mp.quantity as project_quantity,
+        mp.target_price,
+        mp.status as project_status,
+        SUM(we.stock) as total_available_stock,
+        SUM(we.stock) as total_warehouse_quantity,
+        SUM(we.out_quantity) as total_out_quantity,
+        COUNT(we.id) as entry_count
+      FROM mj_project mp
+      LEFT JOIN warehouse_entries we ON mp.id = we.project_id
+      WHERE we.stock > 0
+      GROUP BY mp.id, mp.project_name, mp.description, mp.quantity, mp.target_price, mp.status
+      ORDER BY mp.project_name ASC, mp.description ASC
+    `);
+
+    const responseData = products.map(product => ({
+      project_id: product.project_id,
+      project_name: product.project_name,
+      product_name: product.product_description || product.project_name,
+      description: product.product_description,
+      project_quantity: product.project_quantity,
+      target_price: product.target_price,
+      project_status: product.project_status,
+      available_stock: product.total_available_stock,
+      total_warehouse_quantity: product.total_warehouse_quantity,
+      total_out_quantity: product.total_out_quantity,
+      entry_count: product.entry_count
+    }));
+
+    res.json({
+      success: true,
+      products: responseData
+    });
+
+  } catch (error) {
+    console.error('❌ 재고 상품 목록 조회 오류:', error);
+    res.status(500).json({ 
+      error: '재고 상품 목록 조회 중 오류가 발생했습니다.',
       details: error.message 
     });
   } finally {

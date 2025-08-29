@@ -7,6 +7,7 @@ import UserManage from './Admin/UserManage';
 import ProjectLists from '../../components/Project/MJ/ProjectLists';
 import ProjectDetails from '../../components/Project/MJ/ProjectDetails';
 import { MJCalendar } from '../../components/Calendar';
+import { MJPackingList, MakePackingList } from '../../components/Logistic';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -28,6 +29,10 @@ const Dashboard = () => {
       setSelectedMenu('mj-projects');
     } else if (path.includes('/mj-calendar')) {
       setSelectedMenu('mj-calendar');
+    } else if (path.includes('/mj-packing-list/create')) {
+      setSelectedMenu('mj-packing-list-create');
+    } else if (path.includes('/mj-packing-list')) {
+      setSelectedMenu('mj-packing-list');
     } else {
       setSelectedMenu('dashboard');
     }
@@ -45,6 +50,10 @@ const Dashboard = () => {
         return <ProjectDetails />;
       case 'mj-calendar':
         return <MJCalendar />;
+      case 'mj-packing-list':
+        return <MJPackingList />;
+      case 'mj-packing-list-create':
+        return <MakePackingList />;
       case 'admin-dashboard':
         return (
           <div className="p-6">
