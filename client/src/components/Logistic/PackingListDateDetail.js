@@ -59,7 +59,7 @@ const PackingListDateDetail = () => {
 
         console.log('🔍 [PackingListDateDetail] 필터링된 원본 데이터:', filteredData);
         
-        // 포장코드별로 그룹화
+        // 포장코드별로 그룹화하되 모든 상품 데이터 포함
         const groupedData = filteredData.reduce((acc, item) => {
           console.log('🔍 [PackingListDateDetail] 처리 중인 아이템:', {
             packing_code: item.packing_code,
@@ -72,18 +72,16 @@ const PackingListDateDetail = () => {
           
           if (existingGroup) {
             console.log('🔄 [PackingListDateDetail] 기존 그룹에 상품 추가:', existingGroup.packing_code);
-            // 기존 그룹에 상품 추가
-            if (!existingGroup.products.some(p => p.product_name === item.product_name)) {
-              existingGroup.products.push({
-                product_name: item.product_name,
-                product_sku: item.product_sku,
-                product_image: item.product_image,
-                packaging_method: item.packaging_method,
-                packaging_count: item.packaging_count,
-                quantity_per_box: item.quantity_per_box,
-                created_at: item.created_at
-              });
-            }
+            // 기존 그룹에 상품 추가 (중복 제거 없이 모든 상품 포함)
+            existingGroup.products.push({
+              product_name: item.product_name,
+              product_sku: item.product_sku,
+              product_image: item.product_image,
+              packaging_method: item.packaging_method,
+              packaging_count: item.packaging_count,
+              quantity_per_box: item.quantity_per_box,
+              created_at: item.created_at
+            });
             // box_count는 기존 값 유지 (같은 포장코드의 box_count는 일치해야 함)
             if (existingGroup.box_count !== item.box_count) {
               console.warn(`⚠️ [PackingListDateDetail] ${existingGroup.packing_code}의 box_count 불일치: 기존 ${existingGroup.box_count} vs 현재 ${item.box_count}`);
@@ -135,6 +133,7 @@ const PackingListDateDetail = () => {
           return sum + boxCount;
         }, 0);
         
+        // 모든 상품 개수 합산 (중복 포함)
         const totalProducts = groupedData.reduce((sum, item) => sum + item.products.length, 0);
         const logisticCompanies = Array.from(new Set(groupedData.map(item => item.logistic_company).filter(Boolean)));
 
@@ -329,7 +328,6 @@ const PackingListDateDetail = () => {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">총 박스수</p>
               <p className="text-2xl font-bold text-gray-900">{summary.totalBoxes.toLocaleString()}박스</p>
-              <p className="text-xs text-gray-500">(포장코드별 1회씩 합산)</p>
             </div>
           </div>
         </div>
@@ -401,7 +399,7 @@ const PackingListDateDetail = () => {
                             </span>
                           </div>
                           <span className="text-sm text-gray-500">
-                            상품 수: {packingGroup.products.length}개
+                            상품 수: {packingGroup.products.length}개 (모든 상품 포함)
                           </span>
                         </div>
                       </td>

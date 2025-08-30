@@ -532,11 +532,46 @@ async function migrateMJPackingListTable() {
         `);
         
         console.log('✅ logistic_company 필드 추가 완료');
-        return { success: true, added: true, message: 'logistic_company 필드가 추가되었습니다.' };
       } else {
         console.log('ℹ️ logistic_company 필드가 이미 존재합니다.');
-        return { success: true, added: false, message: 'logistic_company 필드가 이미 존재합니다.' };
       }
+
+      // project_id 필드 추가 확인
+      const [projectIdColumns] = await connection.execute(
+        "SHOW COLUMNS FROM mj_packing_list LIKE 'project_id'"
+      );
+
+      if (projectIdColumns.length === 0) {
+        // project_id 필드 추가
+        await connection.execute(`
+          ALTER TABLE mj_packing_list 
+          ADD COLUMN project_id INT COMMENT '프로젝트 ID (mj_project.id 참조)'
+        `);
+        
+        // 인덱스 추가
+        await connection.execute(`
+          CREATE INDEX idx_project_id ON mj_packing_list(project_id)
+        `);
+        
+        // 외래 키 제약 조건 추가 (선택사항)
+        try {
+          await connection.execute(`
+            ALTER TABLE mj_packing_list 
+            ADD CONSTRAINT fk_packing_list_project 
+            FOREIGN KEY (project_id) REFERENCES mj_project(id) ON DELETE SET NULL
+          `);
+          console.log('✅ project_id 외래 키 제약 조건 추가 완료');
+        } catch (error) {
+          console.log('ℹ️ project_id 외래 키 제약 조건 추가 실패 (이미 존재하거나 제약 조건 문제):', error.message);
+        }
+        
+        console.log('✅ project_id 필드 추가 완료');
+      } else {
+        console.log('ℹ️ project_id 필드가 이미 존재합니다.');
+      }
+      
+      // 모든 마이그레이션이 완료되면 성공 반환
+      return { success: true, added: false, message: 'mj_packingList 테이블 마이그레이션이 완료되었습니다.' };
     }
     
   } catch (error) {

@@ -19,6 +19,7 @@ import {
 import ProdInfo from './Details/ProdInfo';
 import Payment from './Details/Payment';
 import { Delivery } from './Details/Delivery';
+import Logistic from './Details/Logistic';
 
 const ProjectDetails = () => {
   const { id } = useParams();
@@ -535,11 +536,7 @@ const ProjectDetails = () => {
 
             {/* 물류 정보 탭 */}
             {activeTab === 'shipping' && (
-              <div className="text-center py-12">
-                <Ship className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">물류 정보</h3>
-                <p className="text-gray-500">물류 관련 정보가 여기에 표시됩니다.</p>
-              </div>
+              <Logistic project={project} />
             )}
           </div>
         </div>

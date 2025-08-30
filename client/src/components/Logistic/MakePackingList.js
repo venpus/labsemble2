@@ -27,6 +27,149 @@ const MakePackingList = () => {
   // 포장코드 추가 모달 상태
   const [isAddPackingCodeModalOpen, setIsAddPackingCodeModalOpen] = useState(false);
   const [newPackingCodeInput, setNewPackingCodeInput] = useState('');
+
+  // 선택된 프로젝트 ID 상태
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+  
+  // 이미 저장된 상품 ID 추적을 위한 상태
+  const [savedProductIds, setSavedProductIds] = useState(new Set());
+
+  // exportQuantity 계산 함수
+  const calculateExportQuantity = useCallback((packagingMethod, packagingCount, boxCount) => {
+    const method = Number(packagingMethod) || 0;
+    const count = Number(packagingCount) || 0;
+    const boxes = Number(boxCount) || 0;
+    
+    const exportQuantity = method * count * boxes;
+    
+    console.log('🧮 [calculateExportQuantity] 출고 수량 계산:', {
+      packagingMethod: method,
+      packagingCount: count,
+      boxCount: boxes,
+      calculation: `${method} × ${count} × ${boxes}`,
+      exportQuantity: exportQuantity
+    });
+    
+    return exportQuantity;
+  }, []);
+
+  // 프로젝트 export_quantity 업데이트 함수 (기존 방식)
+  const updateProjectExportQuantity = useCallback(async (projectId, totalExportQuantity) => {
+    if (!projectId) {
+      console.warn('⚠️ [updateProjectExportQuantity] 프로젝트 ID가 없습니다.');
+      return false;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('인증 토큰이 없습니다.');
+      }
+
+      console.log('🚀 [updateProjectExportQuantity] 프로젝트 export_quantity 업데이트 시작:', {
+        projectId,
+        totalExportQuantity
+      });
+
+      const response = await fetch('/api/packing-list/update-project-export-quantity', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          projectId,
+          exportQuantity: totalExportQuantity
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('프로젝트 export_quantity 업데이트에 실패했습니다.');
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('✅ [updateProjectExportQuantity] 프로젝트 export_quantity 업데이트 성공:', {
+          projectId,
+          oldExportQuantity: result.oldExportQuantity,
+          newExportQuantity: result.newExportQuantity,
+          remainQuantity: result.remainQuantity
+        });
+        return true;
+      } else {
+        throw new Error(result.error || '업데이트에 실패했습니다.');
+      }
+      
+    } catch (error) {
+      console.error('❌ [updateProjectExportQuantity] 프로젝트 export_quantity 업데이트 오류:', {
+        error: error.message,
+        projectId,
+        totalExportQuantity
+      });
+      return false;
+    }
+  }, []);
+
+  // mj_packing_list 기반으로 프로젝트 export_quantity 계산 및 업데이트 함수
+  const calculateProjectExportQuantity = useCallback(async (projectId) => {
+    if (!projectId) {
+      console.warn('⚠️ [calculateProjectExportQuantity] 프로젝트 ID가 없습니다.');
+      return false;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('인증 토큰이 없습니다.');
+      }
+
+      console.log('🚀 [calculateProjectExportQuantity] mj_packing_list 기반 export_quantity 계산 시작:', {
+        projectId
+      });
+
+      const response = await fetch('/api/packing-list/calculate-project-export-quantity', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          projectId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('프로젝트 export_quantity 계산에 실패했습니다.');
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('✅ [calculateProjectExportQuantity] 프로젝트 export_quantity 계산 및 업데이트 성공:', {
+          projectId,
+          oldExportQuantity: result.oldExportQuantity,
+          newExportQuantity: result.newExportQuantity,
+          remainQuantity: result.remainQuantity,
+          packingListCount: result.packingListCount,
+          calculationDetails: result.calculationDetails
+        });
+        return true;
+      } else {
+        // 제약조건 위반 등 상세한 오류 정보 포함
+        const errorMessage = result.error || '계산에 실패했습니다.';
+        const errorDetails = result.details ? ` (${JSON.stringify(result.details)})` : '';
+        throw new Error(errorMessage + errorDetails);
+      }
+      
+    } catch (error) {
+      console.error('❌ [calculateProjectExportQuantity] 프로젝트 export_quantity 계산 오류:', {
+        error: error.message,
+        projectId
+      });
+      return false;
+    }
+  }, []);
   
 
 
@@ -41,11 +184,25 @@ const MakePackingList = () => {
       productId: product.id,
       productName: product.productName,
       currentTime: new Date().toISOString(),
-      productData: product
+      productData: product,
+      selectedProjectId,
+      hasSelectedProject: !!selectedProjectId
     });
     
+    // 중복 저장 방지: 이미 저장된 상품이고 forceInsert가 false인 경우 건너뛰기
+    if (savedProductIds.has(product.id) && !forceInsert) {
+      console.log('⚠️ [autoSavePackingList] 이미 저장된 상품으로 건너뛰기:', {
+        productId: product.id,
+        productName: product.productName,
+        isSaved: savedProductIds.has(product.id),
+        forceInsert,
+        savedProductIds: Array.from(savedProductIds)
+      });
+      return;
+    }
+    
     if (!packingCode || !product.productName) {
-      console.log('⚠️ [autoSavePackingList] 필수 필드 누락으로 저장 건너뜀:', {
+      console.log('⚠️ [autoSavePackingList] 필수 필드 누락으로 저장 건너뛰기:', {
         packingCode: !!packingCode,
         productName: !!product.productName
       });
@@ -68,15 +225,24 @@ const MakePackingList = () => {
         allPackingCodes: packingData.map(item => ({
           packingCode: item.packingCode,
           plDate: item.plDate,
+          projectId: item.projectId,
           productCount: item.products.length
         }))
       });
       
       if (!packingGroup) {
-        console.warn('⚠️ [autoSavePackingList] packingGroup을 찾을 수 없음:', {
+        console.warn('⚠️ [autoSavePackingList] packingGroup을 찾을 수 없음, 전역 상태 사용:', {
           packingCode,
           availablePackingCodes: packingData.map(item => item.packingCode),
-          totalPackingCodes: packingData.length
+          totalPackingCodes: packingData.length,
+          packingDataState: packingData
+        });
+        
+        // packingGroup을 찾을 수 없으면 전역 상태 사용
+        console.log('🔄 [autoSavePackingList] 전역 상태 사용:', {
+          globalPlDate: plDate,
+          globalLogisticCompany: logisticCompany,
+          selectedProjectId
         });
       }
       
@@ -120,6 +286,9 @@ const MakePackingList = () => {
         finalLogisticCompany = packingGroup.logisticCompany;
       }
       
+      // projectId 우선순위: 상품 > 포장코드 그룹 > 전역 선택
+      const projectIdFromData = product.projectId || packingGroup?.projectId || selectedProjectId;
+      
       const saveData = {
         packing_code: packingCode,
         box_count: product.boxCount || 0,
@@ -137,6 +306,8 @@ const MakePackingList = () => {
         force_insert: forceInsert,
         // 디버깅을 위한 추가 정보
         client_product_id: product.id,
+        // 프로젝트 ID 추가 (packingData에서 우선, 없으면 selectedProjectId 사용)
+        project_id: projectIdFromData,
         timestamp: new Date().toISOString()
       };
       
@@ -147,10 +318,22 @@ const MakePackingList = () => {
         dateInputValue: currentDateInputValue,
         productPlDate: product.plDate,
         packingGroup_plDate: packingGroup?.plDate,
-        global_plDate: plDate
+        global_plDate: plDate,
+        project_id: saveData.project_id
       });
 
       console.log('📤 [autoSavePackingList] 서버로 전송할 데이터:', saveData);
+      console.log('🔍 [autoSavePackingList] project_id 확인:', {
+        selectedProjectId,
+        packingGroupProjectId: packingGroup?.projectId,
+        projectIdFromData,
+        saveDataProjectId: saveData.project_id,
+        hasProjectId: !!saveData.project_id,
+        packingDataProjectIds: packingData.map(item => ({
+          packingCode: item.packingCode,
+          projectId: item.projectId
+        }))
+      });
 
       const response = await fetch('/api/packing-list/auto-save', {
         method: 'POST',
@@ -178,11 +361,15 @@ const MakePackingList = () => {
           setAutoSaveStatus('idle');
         }, 3000);
         
+        // 저장 성공 시 상품 ID를 저장된 목록에 추가
+        setSavedProductIds(prev => new Set([...prev, product.id]));
+        
         console.log('✅ [autoSavePackingList] 패킹리스트 자동 저장 성공:', {
           message: result.message,
           action: result.action,
           id: result.id,
-          productName: product.productName
+          productName: product.productName,
+          savedProductIds: Array.from([...savedProductIds, product.id])
         });
       } else {
         throw new Error(result.error || '저장에 실패했습니다.');
@@ -206,6 +393,8 @@ const MakePackingList = () => {
     }
   }, []);
 
+  // useEffect 제거 - 상태 동기화 문제로 인한 저장 실패 방지
+
   // 포커스 아웃 시 자동 저장
   const handleBlur = useCallback((packingCode, product) => {
     console.log('🔍 [handleBlur] 포커스 아웃 감지:', {
@@ -216,7 +405,8 @@ const MakePackingList = () => {
       productData: product
     });
     
-    autoSavePackingList(packingCode, product);
+    // 기존 상품 수정 시에는 forceInsert: false (중복 저장 방지)
+    autoSavePackingList(packingCode, product, false);
   }, [autoSavePackingList]);
 
   // 포장코드 변경 시 자동 저장 (포커스 아웃 시에만 실행)
@@ -247,7 +437,8 @@ const MakePackingList = () => {
       packingGroup.products.forEach(product => {
         if (product.productName && product.productName.trim() !== '') {
           console.log(`💾 [handlePackingCodeChange] 포장코드 변경 자동저장: ${newPackingCode} - ${product.productName}`);
-          autoSavePackingList(newPackingCode, product);
+          // 기존 상품 수정 시에는 forceInsert: false (중복 저장 방지)
+          autoSavePackingList(newPackingCode, product, false);
         }
       });
     }
@@ -260,10 +451,28 @@ const MakePackingList = () => {
         if (item.packingCode === packingCode) {
           return {
             ...item,
-            products: item.products.map(product => ({
-              ...product,
-              boxCount: newBoxCount
-            }))
+            products: item.products.map(product => {
+              const updatedProduct = { ...product, boxCount: newBoxCount };
+              
+              // exportQuantity 자동 계산 및 업데이트
+              const exportQuantity = calculateExportQuantity(
+                updatedProduct.packagingMethod,
+                updatedProduct.packagingCount,
+                updatedProduct.boxCount
+              );
+              updatedProduct.exportQuantity = exportQuantity;
+              
+              console.log('🧮 [handleBoxCountChange] exportQuantity 자동 계산 완료:', {
+                packingCode,
+                productId: updatedProduct.id,
+                productName: updatedProduct.productName,
+                boxCount: newBoxCount,
+                exportQuantity,
+                calculation: `${updatedProduct.packagingMethod} × ${updatedProduct.packagingCount} × ${newBoxCount} = ${exportQuantity}`
+              });
+              
+              return updatedProduct;
+            })
           };
         }
         return item;
@@ -281,11 +490,12 @@ const MakePackingList = () => {
       packingGroup.products.forEach(product => {
         if (product.productName && product.productName.trim() !== '') {
           console.log(`💾 [handleBoxCountChange] 박스수 변경 자동저장: ${packingCode} - ${product.productName}`);
-          autoSavePackingList(packingCode, product);
+          // 기존 상품 수정 시에는 forceInsert: false (중복 저장 방지)
+          autoSavePackingList(packingCode, product, false);
         }
       });
     }
-  }, [packingData, autoSavePackingList]);
+  }, [packingData, autoSavePackingList, calculateExportQuantity]);
 
   // 작성 날짜 변경 시 자동 저장
   const handleDateChange = useCallback((newDate) => {
@@ -370,6 +580,7 @@ const MakePackingList = () => {
       packingCode: newPackingCodeInput.trim(),
       plDate: plDate,
       logisticCompany: logisticCompany || '비전',
+      projectId: selectedProjectId, // 프로젝트 ID 포함
       products: [
         {
           id: generateUUID(), // UUID 사용
@@ -378,10 +589,19 @@ const MakePackingList = () => {
           boxCount: 0,
           packagingMethod: 0,
           packagingCount: 0,
-          firstImage: null  // 이미지 정보 초기화
+          exportQuantity: 0, // 출고 수량 초기화
+          firstImage: null,  // 이미지 정보 초기화
+          projectId: selectedProjectId // 선택된 프로젝트 ID 설정
         }
       ]
     };
+    
+    // exportQuantity 계산
+    newPackingCode.products[0].exportQuantity = calculateExportQuantity(
+      newPackingCode.products[0].packagingMethod,
+      newPackingCode.products[0].packagingCount,
+      newPackingCode.products[0].boxCount
+    );
     
     console.log('🆕 [addPackingCode] 새 포장코드 생성:', {
       newPackingCode: newPackingCode.packingCode,
@@ -402,19 +622,12 @@ const MakePackingList = () => {
           productIds: item.products.map(p => p.id)
         }))
       });
+      
       return updatedData;
     });
     
-    // 새 포장코드 추가 후 자동 저장
-    setTimeout(() => {
-      console.log('💾 [addPackingCode] 새 포장코드 자동 저장 시작:', {
-        packingCode: newPackingCode.packingCode,
-        productCount: newPackingCode.products.length
-      });
-      newPackingCode.products.forEach(product => {
-        autoSavePackingList(newPackingCode.packingCode, product);
-      });
-    }, 100);
+    // useEffect가 packingData 변경을 감지하여 자동 저장 처리
+    console.log('💾 [addPackingCode] 상태 업데이트 완료, useEffect가 자동 저장 처리 예정');
     
     toast.success(`포장코드 '${newPackingCodeInput.trim()}'가 추가되었습니다.`);
     closeAddPackingCodeModal();
@@ -436,7 +649,9 @@ const MakePackingList = () => {
             boxCount: 0, // 기본값으로 설정
             packagingMethod: 0,
             packagingCount: 0,
-            firstImage: null  // 이미지 정보 초기화
+            exportQuantity: 0, // 출고 수량 초기화
+            firstImage: null,  // 이미지 정보 초기화
+            projectId: selectedProjectId // 선택된 프로젝트 ID 설정
           };
     
     console.log('🆕 [addProduct] 새 상품 생성:', {
@@ -454,6 +669,22 @@ const MakePackingList = () => {
           
           // 박스수 상속
           newProduct.boxCount = existingBoxCount;
+          
+          // exportQuantity 계산
+          newProduct.exportQuantity = calculateExportQuantity(
+            newProduct.packagingMethod,
+            newProduct.packagingCount,
+            newProduct.boxCount
+          );
+          
+          console.log('🧮 [addProduct] 새 상품 exportQuantity 계산 완료:', {
+            productId: newProduct.id,
+            productName: newProduct.productName,
+            packagingMethod: newProduct.packagingMethod,
+            packagingCount: newProduct.packagingCount,
+            boxCount: newProduct.boxCount,
+            exportQuantity: newProduct.exportQuantity
+          });
           
           return {
             ...item,
@@ -476,15 +707,8 @@ const MakePackingList = () => {
       return updatedData;
     });
     
-    // 상태 업데이트 후 자동 저장 실행
-    setTimeout(() => {
-      console.log('💾 [addProduct] 새 상품 자동 저장 시작:', {
-        productId: newProduct.id,
-        productName: newProduct.productName
-      });
-      // 새 상품 추가 시에는 forceInsert 플래그를 true로 설정
-      autoSavePackingList(packingCode, newProduct, true);
-    }, 100);
+    // useEffect가 packingData 변경을 감지하여 자동 저장 처리
+    console.log('💾 [addProduct] 상태 업데이트 완료, useEffect가 자동 저장 처리 예정');
   };
 
   // 포장코드 삭제
@@ -543,6 +767,25 @@ const MakePackingList = () => {
             products: item.products.map(product => {
               if (product.id === productId) {
                 const updatedProduct = { ...product, [field]: value };
+                
+                // exportQuantity 자동 계산 및 업데이트
+                if (['packagingMethod', 'packagingCount', 'boxCount'].includes(field)) {
+                  const exportQuantity = calculateExportQuantity(
+                    updatedProduct.packagingMethod,
+                    updatedProduct.packagingCount,
+                    updatedProduct.boxCount
+                  );
+                  updatedProduct.exportQuantity = exportQuantity;
+                  
+                  console.log('🧮 [updateProduct] exportQuantity 자동 계산 완료:', {
+                    productId,
+                    field,
+                    newValue: value,
+                    exportQuantity,
+                    calculation: `${updatedProduct.packagingMethod} × ${updatedProduct.packagingCount} × ${updatedProduct.boxCount} = ${exportQuantity}`
+                  });
+                }
+                
                 console.log('🔄 [updateProduct] 상품 업데이트 완료:', {
                   productId,
                   field,
@@ -580,6 +823,14 @@ const MakePackingList = () => {
 
   // 프로젝트 선택 처리
   const handleProjectSelect = (selectedProject) => {
+    console.log('🔍 [handleProjectSelect] 선택된 프로젝트:', selectedProject);
+    
+    // 선택된 프로젝트 ID 저장
+    if (selectedProject.projectId) {
+      setSelectedProjectId(selectedProject.projectId);
+      console.log('✅ [handleProjectSelect] 프로젝트 ID 설정:', selectedProject.projectId);
+    }
+    
     if (currentSearchContext) {
       const { packingCode, productId } = currentSearchContext;
       
@@ -587,14 +838,28 @@ const MakePackingList = () => {
         if (item.packingCode === packingCode) {
           return {
             ...item,
+            projectId: selectedProject.projectId, // 포장코드 그룹에 projectId 설정
             products: item.products.map(product => {
               if (product.id === productId) {
-                return {
+                const updatedProduct = {
                   ...product,
                   productName: selectedProject.productName,
                   sku: selectedProject.sku,
-                  firstImage: selectedProject.firstImage
+                  firstImage: selectedProject.firstImage,
+                  projectId: selectedProject.projectId // 상품에도 projectId 설정
                 };
+                
+                console.log('💾 [handleProjectSelect] 상품 업데이트 완료:', {
+                  packingCode,
+                  productId,
+                  productName: updatedProduct.productName,
+                  projectId: updatedProduct.projectId
+                });
+                
+                // useEffect가 packingData 변경을 감지하여 자동 저장 처리
+                console.log('🚀 [handleProjectSelect] 상태 업데이트 완료, useEffect가 자동 저장 처리 예정');
+                
+                return updatedProduct;
               }
               return product;
             })
@@ -652,30 +917,43 @@ const MakePackingList = () => {
 
               
               {/* 자동 저장 상태 표시 */}
-              <div className="ml-4 flex items-center space-x-2">
-                {autoSaveStatus === 'saving' && (
-                  <div className="flex items-center space-x-1 text-blue-600">
-                    <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-xs">저장 중...</span>
+              <div className="ml-4 flex items-center space-x-4">
+                {/* 선택된 프로젝트 ID 표시 */}
+                {selectedProjectId && (
+                  <div className="flex items-center space-x-2 text-sm">
+                    <span className="text-gray-600">연결된 프로젝트:</span>
+                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded-md font-medium">
+                      ID: {selectedProjectId}
+                    </span>
                   </div>
                 )}
-                {autoSaveStatus === 'success' && (
-                  <div className="flex items-center space-x-1 text-green-600">
-                    <div className="w-3 h-3 bg-green-600 rounded-full"></div>
-                    <span className="text-xs">저장 완료</span>
-                  </div>
-                )}
-                {autoSaveStatus === 'error' && (
-                  <div className="flex items-center space-x-1 text-red-600">
-                    <div className="w-3 h-3 bg-red-600 rounded-full"></div>
-                    <span className="text-xs">저장 실패</span>
-                  </div>
-                )}
-                {lastSavedAt && (
-                  <span className="text-xs text-gray-500">
-                    마지막 저장: {lastSavedAt.toLocaleTimeString()}
-                  </span>
-                )}
+                
+                {/* 자동 저장 상태 표시 */}
+                <div className="flex items-center space-x-2">
+                  {autoSaveStatus === 'saving' && (
+                    <div className="flex items-center space-x-1 text-blue-600">
+                      <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-xs">저장 중...</span>
+                    </div>
+                  )}
+                  {autoSaveStatus === 'success' && (
+                    <div className="flex items-center space-x-1 text-green-600">
+                      <div className="w-3 h-3 bg-green-600 rounded-full"></div>
+                      <span className="text-xs">저장 완료</span>
+                    </div>
+                  )}
+                  {autoSaveStatus === 'error' && (
+                    <div className="flex items-center space-x-1 text-red-600">
+                      <div className="w-3 h-3 bg-red-600 rounded-full"></div>
+                      <span className="text-xs">저장 실패</span>
+                    </div>
+                  )}
+                  {lastSavedAt && (
+                    <span className="text-xs text-gray-500">
+                      마지막 저장: {lastSavedAt.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -689,19 +967,50 @@ const MakePackingList = () => {
             </button>
             
             <button
-              onClick={() => {
-                // 모든 데이터를 수동으로 저장
-                packingData.forEach(packingGroup => {
-                  packingGroup.products.forEach(product => {
-                    autoSavePackingList(packingGroup.packingCode, product);
+              onClick={async () => {
+                try {
+                  // 모든 데이터를 수동으로 저장
+                  packingData.forEach(packingGroup => {
+                    packingGroup.products.forEach(product => {
+                      // 전체 저장 시에는 forceInsert: false (중복 저장 방지)
+                      autoSavePackingList(packingGroup.packingCode, product, false);
+                    });
                   });
-                });
-                toast.success('모든 데이터가 저장되었습니다.');
+
+                  // 프로젝트 export_quantity 업데이트 (mj_packing_list 기반 계산)
+                  if (selectedProjectId) {
+                    console.log('🧮 [전체 저장] mj_packing_list 기반 export_quantity 계산 시작:', {
+                      selectedProjectId,
+                      packingDataSummary: packingData.map(group => ({
+                        packingCode: group.packingCode,
+                        productCount: group.products.length,
+                        groupExportQuantity: group.products.reduce((sum, p) => sum + (p.exportQuantity || 0), 0)
+                      }))
+                    });
+
+                    // mj_packing_list 테이블의 데이터를 기반으로 export_quantity 계산 및 업데이트
+                    const calculateSuccess = await calculateProjectExportQuantity(selectedProjectId);
+                    if (calculateSuccess) {
+                      toast.success('패킹리스트 저장 및 프로젝트 출고 수량 계산/업데이트가 완료되었습니다.');
+                    } else {
+                      toast.error('패킹리스트는 저장되었으나 프로젝트 출고 수량 계산/업데이트에 실패했습니다.');
+                    }
+                  } else {
+                    toast.success('모든 데이터가 저장되었습니다.');
+                  }
+                } catch (error) {
+                  console.error('❌ [전체 저장] 오류:', error);
+                  toast.error('전체 저장 중 오류가 발생했습니다.');
+                }
               }}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              className={`inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors ${
+                selectedProjectId 
+                  ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500' 
+                  : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+              }`}
             >
               <Package className="w-4 h-4 mr-2" />
-              전체 저장
+              {selectedProjectId ? '전체 저장 (프로젝트 연결됨)' : '전체 저장'}
             </button>
           </div>
         </div>
@@ -733,6 +1042,9 @@ const MakePackingList = () => {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   한박스 내 수량
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  출고 수량
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   작업
@@ -845,7 +1157,8 @@ const MakePackingList = () => {
                               packingGroup.products.forEach(product => {
                                 if (product.productName && product.productName.trim() !== '') {
                                   console.log(`💾 [테이블] 물류회사 변경 자동저장: ${packingGroup.packingCode} - ${product.productName}`);
-                                  autoSavePackingList(packingGroup.packingCode, product);
+                                  // 기존 상품 수정 시에는 forceInsert: false (중복 저장 방지)
+                                  autoSavePackingList(packingGroup.packingCode, product, false);
                                 }
                               });
                             }}
@@ -967,6 +1280,20 @@ const MakePackingList = () => {
                           {product.packagingMethod && product.packagingCount && product.packagingMethod > 0 && product.packagingCount > 0 
                             ? `${((product.packagingMethod || 0) * (product.packagingCount || 0)).toLocaleString()} 개/박스`
                             : '-'
+                          }
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900 font-bold text-blue-600">
+                          {product.exportQuantity && product.exportQuantity > 0 
+                            ? `${product.exportQuantity.toLocaleString()} 개`
+                            : '-'
+                          }
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {product.packagingMethod && product.packagingCount && product.boxCount 
+                            ? `${product.packagingMethod} × ${product.packagingCount} × ${product.boxCount}`
+                            : '수량 입력 필요'
                           }
                         </div>
                       </td>

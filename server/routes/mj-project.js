@@ -1139,4 +1139,86 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// MJ 프로젝트 물류 정보 조회
+router.get('/:id/logistic', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // 프로젝트 기본 정보 조회 (실제 존재하는 필드만)
+    const [projects] = await pool.execute(`
+      SELECT 
+        id,
+        project_name,
+        quantity
+      FROM mj_project 
+      WHERE id = ?
+    `, [id]);
+    
+    if (projects.length === 0) {
+      return res.status(404).json({ success: false, error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    const project = projects[0];
+    
+    // 입고 히스토리 조회 (warehouse_entries 테이블) - 날짜 오래된 순서로 정렬
+    const [entryHistory] = await pool.execute(`
+      SELECT 
+        id,
+        quantity,
+        entry_date,
+        created_at
+      FROM warehouse_entries 
+      WHERE project_id = ? 
+      ORDER BY entry_date ASC, created_at ASC
+    `, [id]);
+    
+    // 출고 히스토리 조회 (mj_packing_list 테이블) - 날짜 오래된 순서로 정렬
+    const [exportHistory] = await pool.execute(`
+      SELECT 
+        id,
+        SUM(box_count * packaging_count * packaging_method) as quantity,
+        pl_date as export_date,
+        'completed' as status,
+        created_at
+      FROM mj_packing_list 
+      WHERE project_id = ? 
+      GROUP BY pl_date, created_at
+      ORDER BY export_date ASC, created_at ASC
+    `, [id]);
+    
+    // 총 입고 수량 계산
+    const totalEntryQuantity = entryHistory.reduce((sum, entry) => sum + Number(entry.quantity), 0);
+    
+    // 총 출고 수량 계산
+    const totalExportQuantity = exportHistory.reduce((sum, exportItem) => sum + Number(exportItem.quantity), 0);
+    
+    // 물류 데이터 구성 (실제 존재하는 필드만 사용)
+    const logisticData = {
+      orderQuantity: Number(project.quantity) || 0,
+      entryHistory: entryHistory.map(entry => ({
+        entry_date: entry.entry_date,
+        quantity: Number(entry.quantity) || 0,
+        created_at: entry.created_at
+      })),
+      exportHistory: exportHistory.map(exportItem => ({
+        export_date: exportItem.export_date,
+        quantity: Number(exportItem.quantity) || 0,
+        status: exportItem.status,
+        created_at: exportItem.created_at
+      })),
+      remainingEntry: Math.max(0, Number(project.quantity) - totalEntryQuantity),
+      remainingExport: Math.max(0, totalEntryQuantity - totalExportQuantity)
+    };
+    
+    res.json({
+      success: true,
+      logisticData
+    });
+    
+  } catch (error) {
+    console.error('MJ 프로젝트 물류 정보 조회 오류:', error);
+    res.status(500).json({ success: false, error: '물류 정보 조회 중 오류가 발생했습니다.' });
+  }
+});
+
 module.exports = router; 

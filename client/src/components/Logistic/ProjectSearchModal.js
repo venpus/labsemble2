@@ -21,7 +21,7 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
       setError(null);
       
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/warehouse/products-with-entry-quantity', {
+      const response = await fetch('/api/warehouse/products-with-remain-quantity', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -69,6 +69,7 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
     
     onSelectProject({
       id: project.project_id,
+      projectId: project.project_id, // 실제 프로젝트 ID 추가
       productName: project.project_name,
       sku: `SKU-${project.project_id}`,
       firstImage: project.first_image ? {
@@ -89,7 +90,7 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">프로젝트 검색</h2>
-            <p className="text-sm text-gray-600">entry_quantity {'>'} 0인 프로젝트 중에서 선택하세요</p>
+            <p className="text-sm text-gray-600">잔여 재고가 있는 프로젝트 중에서 선택하세요</p>
           </div>
           <button
             onClick={onClose}
@@ -140,7 +141,7 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
                 {searchTerm ? '검색 결과가 없습니다' : '등록된 프로젝트가 없습니다'}
               </p>
               <p className="text-gray-600">
-                {searchTerm ? '다른 검색어를 시도해보세요' : 'entry_quantity > 0인 프로젝트가 없습니다'}
+                {searchTerm ? '다른 검색어를 시도해보세요' : '잔여 재고가 있는 프로젝트가 없습니다'}
               </p>
             </div>
           ) : (
@@ -199,9 +200,23 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
                           {project.product_description}
                         </p>
                       )}
-                      <div className="flex items-center justify-between text-sm text-gray-500">
-                        <span>수량: {project.project_quantity?.toLocaleString() || 0}</span>
-                        <span>입고: {project.entry_quantity?.toLocaleString() || 0}</span>
+                      <div className="flex flex-col space-y-1 text-sm text-gray-500">
+                        <div className="flex justify-between">
+                          <span>총 주문:</span>
+                          <span>{project.project_quantity?.toLocaleString() || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>입고:</span>
+                          <span>{project.entry_quantity?.toLocaleString() || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>출고:</span>
+                          <span>{project.export_quantity?.toLocaleString() || 0}</span>
+                        </div>
+                        <div className="flex justify-between font-medium text-blue-600">
+                          <span>잔여:</span>
+                          <span>{project.remain_quantity?.toLocaleString() || 0}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -215,7 +230,7 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
         <div className="p-6 border-t border-gray-200 bg-gray-50">
           <div className="flex justify-between items-center text-sm text-gray-600">
             <span>총 {filteredProjects.length}개 프로젝트</span>
-            <span>entry_quantity {'>'} 0 조건</span>
+            <span>잔여 재고 {'>'} 0 조건</span>
           </div>
         </div>
       </div>

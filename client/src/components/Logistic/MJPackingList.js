@@ -9,6 +9,10 @@ const MJPackingList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  
+  // 페이징 관련 상태
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // 패킹 리스트 데이터 가져오기
   const fetchPackingLists = async () => {
@@ -131,6 +135,7 @@ const MJPackingList = () => {
 
   // 새로고침 버튼 클릭
   const handleRefresh = () => {
+    setCurrentPage(1); // 새로고침 시 첫 페이지로 이동
     fetchPackingLists();
   };
 
@@ -162,6 +167,54 @@ const MJPackingList = () => {
     console.log('🔗 [MJPackingList] 패킹리스트 작성 버튼 클릭');
     toast.success('패킹리스트 작성 페이지로 이동합니다...');
     navigate('/dashboard/mj-packing-list/create');
+  };
+
+  // 페이징 관련 함수들
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // 페이지당 항목 수 변경 시 첫 페이지로 이동
+  };
+
+  // 현재 페이지의 데이터 계산
+  const getCurrentPageData = () => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return packingLists.slice(startIndex, endIndex);
+  };
+
+  // 총 페이지 수 계산
+  const totalPages = Math.ceil(packingLists.length / itemsPerPage);
+
+  // 페이지 번호 배열 생성
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+    
+    if (totalPages <= maxVisiblePages) {
+      // 총 페이지 수가 적으면 모든 페이지 표시
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // 현재 페이지 주변의 페이지들 표시
+      let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+      let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+      
+      if (endPage - startPage + 1 < maxVisiblePages) {
+        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pages.push(i);
+      }
+    }
+    
+    return pages;
   };
 
   if (loading) {
@@ -257,7 +310,7 @@ const MJPackingList = () => {
                   </td>
                 </tr>
               ) : (
-                packingLists.map((item, index) => (
+                getCurrentPageData().map((item, index) => (
                   <tr 
                     key={item.pl_date} 
                     className="hover:bg-blue-50 cursor-pointer transition-colors duration-200"
@@ -265,7 +318,7 @@ const MJPackingList = () => {
                     title={`${item.pl_date} 상세보기 - 클릭하여 상세페이지로 이동`}
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {index + 1}
+                      {(currentPage - 1) * itemsPerPage + index + 1}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
                       <div className="flex items-center">
@@ -312,6 +365,93 @@ const MJPackingList = () => {
           </table>
         </div>
       </div>
+
+      {/* 페이징 컨트롤 */}
+      {packingLists.length > 0 && (
+        <div className="bg-white px-6 py-4 border-t border-gray-200">
+          <div className="flex items-center justify-between">
+            {/* 페이지당 항목 수 선택 */}
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-700">페이지당 표시:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value={10}>10개</option>
+                <option value={15}>15개</option>
+                <option value={20}>20개</option>
+                <option value={30}>30개</option>
+              </select>
+            </div>
+
+            {/* 페이지 정보 */}
+            <div className="text-sm text-gray-700">
+              {packingLists.length > 0 ? (
+                <>
+                  {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, packingLists.length)} / {packingLists.length}개
+                </>
+              ) : (
+                '0개'
+              )}
+            </div>
+
+            {/* 페이지 네비게이션 */}
+            <div className="flex items-center space-x-1">
+              {/* 첫 페이지로 이동 */}
+              <button
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                처음
+              </button>
+              
+              {/* 이전 페이지 */}
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                이전
+              </button>
+
+              {/* 페이지 번호들 */}
+              {getPageNumbers().map((page) => (
+                <button
+                  key={page}
+                  onClick={() => handlePageChange(page)}
+                  className={`px-3 py-1 text-sm border rounded-md transition-colors ${
+                    currentPage === page
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+
+              {/* 다음 페이지 */}
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                다음
+              </button>
+
+              {/* 마지막 페이지로 이동 */}
+              <button
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                마지막
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 데이터 요약 */}
       {packingLists.length > 0 && (

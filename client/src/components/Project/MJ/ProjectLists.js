@@ -311,6 +311,46 @@ const ProjectLists = () => {
     );
   };
 
+    const getExportStatusBadge = (project) => {
+    // mj_project 테이블의 quantity와 warehouse_quantity를 비교하여 출고 상태 결정
+    const projectQuantity = Number(project.quantity) || 0;
+    const warehouseQuantity = Number(project.warehouse_quantity) || 0;
+    
+    // 배송중: warehouse_quantity > 0 (재고가 남아있음)
+    if (warehouseQuantity > 0) {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+          배송중
+        </span>
+      );
+    }
+    
+    // 출고완료: warehouse_quantity가 0이고, 프로젝트 수량이 0보다 큼
+    if (warehouseQuantity === 0 && projectQuantity > 0) {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          출고완료
+        </span>
+      );
+    }
+    
+    // 출고 대기: warehouse_quantity가 0이고 프로젝트 수량이 0
+    if (warehouseQuantity === 0 && projectQuantity === 0) {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+          출고 대기
+        </span>
+      );
+    }
+    
+    // 기본 상태 (예상치 못한 경우)
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+        출고 준비
+      </span>
+    );
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -438,6 +478,9 @@ const ProjectLists = () => {
                       입고 상태
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      출고 상태
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       등록일
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -543,6 +586,16 @@ const ProjectLists = () => {
                         >
                           <Truck className="w-4 h-4 mr-2 text-gray-400" />
                           <span>{getWarehouseStatusBadge(project)}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div 
+                          className="flex items-center text-gray-900 cursor-pointer hover:bg-gray-100 p-2 rounded transition-colors group"
+                          onClick={() => navigate(`/dashboard/mj-projects/${project.id}?tab=shipping`)}
+                          title="물류정보 보기"
+                        >
+                          <Truck className="w-4 h-4 mr-2 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                          <span className="group-hover:underline">{getExportStatusBadge(project)}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
