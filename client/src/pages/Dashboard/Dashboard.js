@@ -7,7 +7,7 @@ import UserManage from './Admin/UserManage';
 import ProjectLists from '../../components/Project/MJ/ProjectLists';
 import ProjectDetails from '../../components/Project/MJ/ProjectDetails';
 import { MJCalendar } from '../../components/Calendar';
-import { MJPackingList, MakePackingList } from '../../components/Logistic';
+import { MJPackingList, MakePackingList, PackingListDetail, PackingListDateDetail } from '../../components/Logistic';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -17,28 +17,50 @@ const Dashboard = () => {
   useEffect(() => {
     // URL 경로에 따라 선택된 메뉴 설정
     const path = location.pathname;
+    console.log('🔍 [Dashboard] 현재 경로:', path);
+    console.log('🔍 [Dashboard] 경로 분할:', path.split('/'));
+    
     if (path.includes('/admin/partners')) {
+      console.log('🔍 [Dashboard] admin/partners 감지');
       setSelectedMenu('partner-settings');
     } else if (path.includes('/admin/users')) {
+      console.log('🔍 [Dashboard] admin/users 감지');
       setSelectedMenu('user-management');
     } else if (path.includes('/admin')) {
+      console.log('🔍 [Dashboard] admin 감지');
       setSelectedMenu('admin-dashboard');
     } else if (path.includes('/mj-projects/') && path.split('/').length > 3) {
+      console.log('🔍 [Dashboard] mj-projects 상세 감지');
       setSelectedMenu('mj-project-details');
     } else if (path.includes('/mj-projects')) {
+      console.log('🔍 [Dashboard] mj-projects 감지');
       setSelectedMenu('mj-projects');
     } else if (path.includes('/mj-calendar')) {
+      console.log('🔍 [Dashboard] mj-calendar 감지');
       setSelectedMenu('mj-calendar');
     } else if (path.includes('/mj-packing-list/create')) {
+      console.log('🔍 [Dashboard] mj-packing-list/create 감지');
       setSelectedMenu('mj-packing-list-create');
+    } else if (path.includes('/mj-packing-list/date/')) {
+      console.log('🔍 [Dashboard] mj-packing-list/date 감지:', path);
+      setSelectedMenu('mj-packing-list-date-detail');
+    } else if (path.includes('/mj-packing-list/') && path.split('/').length > 3) {
+      console.log('🔍 [Dashboard] mj-packing-list 상세 감지:', path);
+      setSelectedMenu('mj-packing-list-detail');
     } else if (path.includes('/mj-packing-list')) {
+      console.log('🔍 [Dashboard] mj-packing-list 감지');
       setSelectedMenu('mj-packing-list');
     } else {
+      console.log('🔍 [Dashboard] 기본 대시보드 감지');
       setSelectedMenu('dashboard');
     }
+    
+    console.log('🔍 [Dashboard] 설정된 메뉴:', selectedMenu);
   }, [location]);
 
   const renderContent = () => {
+    console.log('🔍 [Dashboard] renderContent 호출, selectedMenu:', selectedMenu);
+    
     switch (selectedMenu) {
       case 'partner-settings':
         return <Partners />;
@@ -54,6 +76,10 @@ const Dashboard = () => {
         return <MJPackingList />;
       case 'mj-packing-list-create':
         return <MakePackingList />;
+      case 'mj-packing-list-detail':
+        return <PackingListDetail />;
+      case 'mj-packing-list-date-detail':
+        return <PackingListDateDetail />;
       case 'admin-dashboard':
         return (
           <div className="p-6">

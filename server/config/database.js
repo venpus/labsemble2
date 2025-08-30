@@ -420,6 +420,133 @@ async function migrateMJProjectQuantityFields() {
   }
 }
 
+// mj_packingList 테이블 마이그레이션 함수
+async function migrateMJPackingListTable() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 mj_packingList 테이블 마이그레이션 시작...');
+    
+    // mj_packingList 테이블 존재 여부 확인
+    const [tables] = await connection.execute(
+      "SHOW TABLES LIKE 'mj_packing_list'"
+    );
+
+    if (tables.length === 0) {
+      // mj_packingList 테이블 생성
+      await connection.execute(`
+        CREATE TABLE mj_packing_list (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          packing_code VARCHAR(50) NOT NULL COMMENT '포장코드',
+          box_count INT NOT NULL DEFAULT 0 COMMENT '박스수',
+          pl_date DATE COMMENT '작성날짜',
+          logistic_company VARCHAR(50) COMMENT '물류회사',
+          product_name VARCHAR(255) NOT NULL COMMENT '상품명',
+          product_sku VARCHAR(100) COMMENT '상품 SKU',
+          product_image VARCHAR(500) COMMENT '상품사진 URL',
+          packaging_method INT NOT NULL DEFAULT 0 COMMENT '소포장 구성',
+          packaging_count INT NOT NULL DEFAULT 0 COMMENT '포장수',
+          quantity_per_box INT NOT NULL DEFAULT 0 COMMENT '한박스내 수량',
+          client_product_id VARCHAR(50) COMMENT '클라이언트 상품 ID (React 컴포넌트에서 생성된 고유 ID)',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+          
+          INDEX idx_packing_code (packing_code),
+          INDEX idx_pl_date (pl_date),
+          INDEX idx_logistic_company (logistic_company),
+          INDEX idx_product_name (product_name),
+          INDEX idx_created_at (created_at),
+          INDEX idx_client_product_id (client_product_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='MJ 패킹리스트 테이블'
+      `);
+      
+      console.log('✅ mj_packingList 테이블 생성 완료 (client_product_id 포함)');
+      return { success: true, added: true, message: 'mj_packingList 테이블 마이그레이션이 완료되었습니다.' };
+    } else {
+      // 기존 테이블에 client_product_id 필드 추가
+      const [columns] = await connection.execute(
+        "SHOW COLUMNS FROM mj_packing_list LIKE 'client_product_id'"
+      );
+
+      if (columns.length === 0) {
+        // client_product_id 필드 추가
+        await connection.execute(`
+          ALTER TABLE mj_packing_list 
+          ADD COLUMN client_product_id VARCHAR(50) COMMENT '클라이언트 상품 ID (React 컴포넌트에서 생성된 고유 ID)'
+        `);
+        
+        // 인덱스 추가
+        await connection.execute(`
+          CREATE INDEX idx_client_product_id ON mj_packing_list(client_product_id)
+        `);
+        
+        // 기존 데이터의 client_product_id를 product_sku와 동일하게 설정
+        await connection.execute(`
+          UPDATE mj_packing_list 
+          SET client_product_id = product_sku 
+          WHERE client_product_id IS NULL
+        `);
+        
+        console.log('✅ client_product_id 필드 추가 완료');
+      } else {
+        console.log('ℹ️ client_product_id 필드가 이미 존재합니다.');
+      }
+      
+      // pl_date 필드 추가 확인
+      const [plDateColumns] = await connection.execute(
+        "SHOW COLUMNS FROM mj_packing_list LIKE 'pl_date'"
+      );
+
+      if (plDateColumns.length === 0) {
+        // pl_date 필드 추가
+        await connection.execute(`
+          ALTER TABLE mj_packing_list 
+          ADD COLUMN pl_date DATE COMMENT '작성날짜'
+        `);
+        
+        // 인덱스 추가
+        await connection.execute(`
+          CREATE INDEX idx_pl_date ON mj_packing_list(pl_date)
+        `);
+        
+        console.log('✅ pl_date 필드 추가 완료');
+      } else {
+        console.log('ℹ️ pl_date 필드가 이미 존재합니다.');
+      }
+      
+      // logistic_company 필드 추가 확인
+      const [logisticCompanyColumns] = await connection.execute(
+        "SHOW COLUMNS FROM mj_packing_list LIKE 'logistic_company'"
+      );
+
+      if (logisticCompanyColumns.length === 0) {
+        // logistic_company 필드 추가
+        await connection.execute(`
+          ALTER TABLE mj_packing_list 
+          ADD COLUMN logistic_company VARCHAR(50) COMMENT '물류회사'
+        `);
+        
+        // 인덱스 추가
+        await connection.execute(`
+          CREATE INDEX idx_logistic_company ON mj_packing_list(logistic_company)
+        `);
+        
+        console.log('✅ logistic_company 필드 추가 완료');
+        return { success: true, added: true, message: 'logistic_company 필드가 추가되었습니다.' };
+      } else {
+        console.log('ℹ️ logistic_company 필드가 이미 존재합니다.');
+        return { success: true, added: false, message: 'logistic_company 필드가 이미 존재합니다.' };
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ mj_packingList 테이블 마이그레이션 오류:', error);
+    return { success: false, error: error.message };
+  } finally {
+    connection.release();
+  }
+}
+
 // warehouse_entries 테이블 stock 필드 마이그레이션 함수
 async function migrateWarehouseStockFields() {
   const connection = await pool.getConnection();
@@ -584,6 +711,15 @@ async function initializeDatabase() {
       console.error('❌ mj_project quantity 필드 마이그레이션 실패:', quantityMigrationResult.error);
     }
     
+    // mj_packingList 테이블 마이그레이션 실행
+    console.log('🔄 mj_packingList 테이블 마이그레이션 시작...');
+    const packingListMigrationResult = await migrateMJPackingListTable();
+    if (packingListMigrationResult.success) {
+      console.log('✅ mj_packingList 테이블 마이그레이션 완료:', packingListMigrationResult.message);
+    } else {
+      console.error('❌ mj_packingList 테이블 마이그레이션 실패:', packingListMigrationResult.error);
+    }
+    
     console.log('🎉 모든 마이그레이션이 완료되었습니다!');
     
   } catch (error) {
@@ -628,5 +764,6 @@ module.exports = {
   testConnection,
   initializeDatabase,
   migrateWarehouseStockFields,
-  migrateMJProjectQuantityFields
+  migrateMJProjectQuantityFields,
+  migrateMJPackingListTable
 }; 

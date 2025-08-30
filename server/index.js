@@ -58,6 +58,7 @@ app.use('/api/partners', require('./routes/partners'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/mj-project', require('./routes/mj-project'));
 app.use('/api/warehouse', require('./routes/warehouse'));
+app.use('/api/packing-list', require('./routes/packing-list'));
 // app.use('/api/products', require('./routes/products'));
 // app.use('/api/orders', require('./routes/orders'));
 // app.use('/api/quotations', require('./routes/quotations'));
