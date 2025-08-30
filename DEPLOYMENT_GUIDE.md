@@ -218,6 +218,146 @@ DB_NAME=labsemble
 CORS_ORIGIN=http://labsesmble.com
 ```
 
+### **6.4 환경별 설정 상세 가이드**
+
+#### **개발 환경 (Development)**
+```bash
+# server/.env
+NODE_ENV=development
+PORT=5000
+JWT_SECRET=your-dev-secret-key
+DB_HOST=localhost
+DB_USER=your_dev_user
+DB_PASSWORD=your_dev_password
+DB_NAME=labsemble_dev
+CORS_ORIGIN=http://localhost:3000
+
+# 로깅 설정
+# - 모든 로그 출력 (디버깅용)
+# - 콘솔에 상세한 디버깅 정보 표시
+# - 이미지 처리 과정, API 호출 과정 등 모든 정보 로깅
+```
+
+#### **스테이징 환경 (Staging)**
+```bash
+# server/.env
+NODE_ENV=staging
+PORT=5000
+JWT_SECRET=your-staging-secret-key
+DB_HOST=staging-db-host
+DB_USER=your_staging_user
+DB_PASSWORD=your_staging_password
+DB_NAME=labsemble_staging
+CORS_ORIGIN=https://staging.your-domain.com
+
+# 로깅 설정
+# - 에러 로그와 경고 로그만 출력
+# - 디버깅 로그는 제한적으로 출력
+# - 성능 모니터링을 위한 기본 정보 로깅
+```
+
+#### **상용 환경 (Production)**
+```bash
+# server/.env
+NODE_ENV=production
+PORT=5000
+JWT_SECRET=your-production-secret-key
+DB_HOST=production-db-host
+DB_USER=your_production_user
+DB_PASSWORD=your_production_password
+DB_NAME=labsemble_production
+CORS_ORIGIN=https://your-domain.com
+
+# 로깅 설정
+# - 에러 로그만 출력 (중요한 에러 모니터링)
+# - 디버깅 로그 자동 비활성화
+# - 성능 최적화 및 보안 강화
+```
+
+#### **환경별 로그 레벨 비교**
+
+| 환경 | 디버깅 로그 | 정보 로그 | 경고 로그 | 에러 로그 | 성능 |
+|------|-------------|-----------|-----------|-----------|------|
+| **Development** | ✅ 출력 | ✅ 출력 | ✅ 출력 | ✅ 출력 | 일반 |
+| **Staging** | ⚠️ 제한적 | ✅ 출력 | ✅ 출력 | ✅ 출력 | 최적화 |
+| **Production** | ❌ 비활성화 | ❌ 비활성화 | ❌ 비활성화 | ✅ 출력 | 최고 |
+
+#### **환경별 설정 파일 관리**
+```bash
+# 환경별 설정 파일 생성
+sudo -u labsemble cp server/env.example server/.env.development
+sudo -u labsemble cp server/env.example server/.env.staging
+sudo -u labsemble cp server/env.example server/.env.production
+
+# 환경별 설정 적용
+# Development
+sudo -u labsemble cp server/.env.development server/.env
+
+# Staging
+sudo -u labsemble cp server/.env.staging server/.env
+
+# Production
+sudo -u labsemble cp server/.env.production server/.env
+```
+
+#### **환경별 PM2 설정**
+```javascript
+// ecosystem.config.js - 환경별 설정
+module.exports = {
+  apps: [{
+    name: 'labsemble-server',
+    script: 'server/index.js',
+    instances: 'max',
+    exec_mode: 'cluster',
+    cwd: '/var/www/labsemble',
+    
+    // Development 환경
+    env_development: {
+      NODE_ENV: 'development',
+      PORT: 5000,
+      instances: 1,
+      watch: true,
+      ignore_watch: ['node_modules', 'logs', 'uploads']
+    },
+    
+    // Staging 환경
+    env_staging: {
+      NODE_ENV: 'staging',
+      PORT: 5000,
+      instances: 2,
+      watch: false,
+      max_memory_restart: '512M'
+    },
+    
+    // Production 환경
+    env_production: {
+      NODE_ENV: 'production',
+      PORT: 5000,
+      instances: 'max',
+      watch: false,
+      max_memory_restart: '1G',
+      restart_delay: 4000,
+      max_restarts: 10
+    }
+  }]
+};
+```
+
+#### **환경별 서버 시작 명령어**
+```bash
+# Development 환경
+sudo -u labsemble pm2 start ecosystem.config.js --env development
+
+# Staging 환경
+sudo -u labsemble pm2 start ecosystem.config.js --env staging
+
+# Production 환경
+sudo -u labsemble pm2 start ecosystem.config.js --env production
+
+# 환경 변경 시 재시작
+sudo -u labsemble pm2 restart labsemble-server --update-env
+```
+
 ### **6.4 클라이언트 빌드**
 ```bash
 cd client

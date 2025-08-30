@@ -10,6 +10,7 @@ const {
   convertUTCToKST,
   isValidDate 
 } = require('../utils/timezone');
+const { devLog, errorLog } = require('../utils/logger');
 
 const router = express.Router();
 
@@ -1015,7 +1016,7 @@ router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { entry_quantity } = req.body;
     
-    console.log('🔄 [mj-project] entry_quantity 업데이트 시작:', { 
+    devLog('🔄 [mj-project] entry_quantity 업데이트 시작:', { 
       projectId: id, 
       entry_quantity,
       requestBody: req.body 
@@ -1028,11 +1029,11 @@ router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
     );
     
     if (projects.length === 0) {
-      console.log('❌ [mj-project] 프로젝트를 찾을 수 없음:', { projectId: id });
+      devLog('❌ [mj-project] 프로젝트를 찾을 수 없음:', { projectId: id });
       return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
     }
     
-    console.log('✅ [mj-project] 프로젝트 확인 완료:', { 
+    devLog('✅ [mj-project] 프로젝트 확인 완료:', { 
       projectId: id, 
       projectName: projects[0].project_name 
     });
@@ -1046,7 +1047,7 @@ router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
       WHERE id = ?
     `, [entry_quantity, id]);
     
-    console.log('✅ [mj-project] entry_quantity 업데이트 완료:', { 
+    devLog('✅ [mj-project] entry_quantity 업데이트 완료:', { 
       projectId: id, 
       entry_quantity 
     });
@@ -1060,7 +1061,7 @@ router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
     const export_quantity = projectData[0]?.export_quantity || 0;
     const remain_quantity = Math.max(0, entry_quantity - export_quantity);
     
-    console.log('🔄 [mj-project] remain_quantity 계산:', { 
+    devLog('🔄 [mj-project] remain_quantity 계산:', { 
       projectId: id, 
       entry_quantity, 
       export_quantity, 
@@ -1075,7 +1076,7 @@ router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
       WHERE id = ?
     `, [remain_quantity, id]);
     
-    console.log('✅ [mj-project] remain_quantity 업데이트 완료:', { 
+    devLog('✅ [mj-project] remain_quantity 업데이트 완료:', { 
       projectId: id, 
       remain_quantity 
     });
@@ -1088,7 +1089,7 @@ router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
       updated_at: new Date().toISOString()
     };
     
-    console.log('✅ [mj-project] entry_quantity 업데이트 완료, 응답:', responseData);
+    devLog('✅ [mj-project] entry_quantity 업데이트 완료, 응답:', responseData);
     
     res.json({ 
       success: true, 
@@ -1097,7 +1098,7 @@ router.put('/:id/entry-quantity', authMiddleware, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ [mj-project] entry_quantity 업데이트 오류:', error);
+    errorLog('❌ [mj-project] entry_quantity 업데이트 오류:', error);
     res.status(500).json({ error: 'entry_quantity 업데이트 중 오류가 발생했습니다.' });
   }
 });
@@ -1221,4 +1222,193 @@ router.get('/:id/logistic', authMiddleware, async (req, res) => {
   }
 });
 
-module.exports = router; 
+// MJ 프로젝트 발주 일정 조회 (캘린더용)
+router.get('/calendar/order-events', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    // 발주 날짜가 있는 프로젝트들을 조회
+    const [projects] = await connection.execute(`
+      SELECT 
+        p.id,
+        p.project_name,
+        p.actual_order_date,
+        p.expected_factory_shipping_date,
+        p.quantity,
+        p.target_price,
+        p.supplier_name,
+        p.is_order_completed,
+        p.is_factory_shipping_completed,
+        p.factory_shipping_status,
+        p.entry_quantity,
+        p.export_quantity,
+        p.remain_quantity,
+        p.factory_delivery_days,
+        p.created_at,
+        p.updated_at,
+        u.username as assignee,
+        (SELECT file_path FROM mj_project_images WHERE project_id = p.id ORDER BY id ASC LIMIT 1) as representative_image
+      FROM mj_project p
+      LEFT JOIN users u ON p.user_id = u.id
+      WHERE p.actual_order_date IS NOT NULL
+      ORDER BY p.actual_order_date ASC
+    `);
+
+    // 캘린더 이벤트 형식으로 변환
+    const events = projects.map(project => {
+      // 발주일 + 공장 납기소요일 계산
+      const orderDate = new Date(project.actual_order_date);
+      const deliveryDays = project.factory_delivery_days || 7; // 기본값 7일
+      const expectedDeliveryDate = new Date(orderDate);
+      expectedDeliveryDate.setDate(orderDate.getDate() + deliveryDays);
+      
+      // 이미지 경로 처리 - ProjectSearchModal과 동일한 방식 사용
+      let imageData = null;
+              if (project.representative_image) {
+          // 파일명 추출 (전체 경로에서 파일명만)
+          const fileName = project.representative_image.split('/').pop();
+          
+          imageData = {
+            url: `/api/warehouse/image/${fileName}`,
+            thumbnail_url: `/api/warehouse/image/${fileName}`,
+            stored_filename: fileName,
+            file_path: project.representative_image
+          };
+        }
+      
+      return {
+        id: project.id,
+        title: project.project_name,
+        date: project.actual_order_date,
+        time: '09:00', // 기본 시간
+        location: project.supplier_name || '공급자 미지정',
+        description: `발주 수량: ${project.quantity}개, 목표가: ${project.target_price ? project.target_price.toLocaleString() : '미정'}원`,
+        assignee: project.assignee || '담당자 미지정',
+        productName: project.project_name,
+        quantity: project.quantity || 0,
+        unit: '개',
+        createdAt: project.created_at,
+        updatedAt: project.updated_at,
+        // 추가 정보
+        isOrderCompleted: project.is_order_completed === 1,
+        isFactoryShippingCompleted: project.is_factory_shipping_completed === 1,
+        factoryShippingStatus: project.factory_shipping_status,
+        entryQuantity: project.entry_quantity,
+        exportQuantity: project.export_quantity,
+        remainQuantity: project.remain_quantity,
+        representativeImage: imageData, // 이미지 객체로 변경
+        // 공장 납기 관련
+        factoryDeliveryDays: deliveryDays,
+        expectedDeliveryDate: expectedDeliveryDate.toISOString().split('T')[0]
+      };
+    });
+
+    res.json({
+      success: true,
+      data: events,
+      message: '발주 일정 조회 성공'
+    });
+
+  } catch (error) {
+    console.error('발주 일정 조회 오류:', error);
+    res.status(500).json({
+      success: false,
+      error: '발주 일정 조회 중 오류가 발생했습니다.',
+      details: error.message
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// MJ 프로젝트 물류 일정 조회 (캘린더용)
+router.get('/calendar/logistics-events', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    // 공장 출고 날짜가 있는 프로젝트들을 조회
+    const [projects] = await connection.execute(`
+      SELECT 
+        p.id,
+        p.project_name,
+        p.expected_factory_shipping_date,
+        p.actual_factory_shipping_date,
+        p.quantity,
+        p.export_quantity,
+        p.remain_quantity,
+        p.factory_shipping_status,
+        p.is_factory_shipping_completed,
+        p.supplier_name,
+        p.created_at,
+        p.updated_at,
+        u.username as assignee,
+        (SELECT file_path FROM mj_project_images WHERE project_id = p.id ORDER BY id ASC LIMIT 1) as representative_image
+      FROM mj_project p
+      LEFT JOIN users u ON p.user_id = u.id
+      WHERE p.expected_factory_shipping_date IS NOT NULL OR p.actual_factory_shipping_date IS NOT NULL
+      ORDER BY COALESCE(p.actual_factory_shipping_date, p.expected_factory_shipping_date) ASC
+    `);
+
+    // 캘린더 이벤트 형식으로 변환
+    const events = projects.map(project => {
+      const shippingDate = project.actual_factory_shipping_date || project.expected_factory_shipping_date;
+      const isActual = !!project.actual_factory_shipping_date;
+      
+              // 이미지 경로 처리 - ProjectSearchModal과 동일한 방식 사용
+        let imageData = null;
+        
+        if (project.representative_image) {
+          // 파일명 추출 (전체 경로에서 파일명만)
+          const fileName = project.representative_image.split('/').pop();
+          
+          imageData = {
+            url: `/api/warehouse/image/${fileName}`,
+            thumbnail_url: `/api/warehouse/image/${fileName}`,
+            stored_filename: fileName,
+            file_path: project.representative_image
+          };
+        }
+      
+      return {
+        id: project.id,
+        title: `${isActual ? '출고 완료' : '예정 출고'}: ${project.project_name}`,
+        date: shippingDate,
+        time: '08:00', // 기본 시간
+        location: project.supplier_name || '공급자 미지정',
+        description: `출고 수량: ${project.export_quantity || 0}개, 잔여 수량: ${project.remain_quantity || 0}개`,
+        assignee: project.assignee || '담당자 미지정',
+        productName: project.project_name,
+        quantity: project.export_quantity || project.quantity || 0,
+        unit: '개',
+        createdAt: project.created_at,
+        updatedAt: project.updated_at,
+        // 추가 정보
+        isActualShipping: isActual,
+        factoryShippingStatus: project.factory_shipping_status,
+        isFactoryShippingCompleted: project.is_factory_shipping_completed === 1,
+        entryQuantity: project.entry_quantity,
+        exportQuantity: project.export_quantity,
+        remainQuantity: project.remain_quantity,
+        representativeImage: imageData
+      };
+    });
+
+    res.json({
+      success: true,
+      data: events,
+      message: '물류 일정 조회 성공'
+    });
+
+  } catch (error) {
+    console.error('물류 일정 조회 오류:', error);
+    res.status(500).json({
+      success: false,
+      error: '물류 일정 조회 중 오류가 발생했습니다.',
+      details: error.message
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+module.exports = router;

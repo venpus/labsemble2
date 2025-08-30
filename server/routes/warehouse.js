@@ -5,6 +5,7 @@ const fs = require('fs').promises;
 const router = express.Router();
 const { pool } = require('../config/database');
 const authMiddleware = require('../middleware/auth');
+const { devLog, errorLog } = require('../utils/logger');
 
 // 입고기록 CRUD API
 // 입고기록 생성
@@ -669,7 +670,7 @@ router.get('/image/:filename', async (req, res) => {
     res.send(imageBuffer);
     
   } catch (error) {
-    console.error('❌ [warehouse] 이미지 프록시 오류:', error);
+    errorLog('❌ [warehouse] 이미지 프록시 오류:', error);
     res.status(500).json({ error: '이미지 로드 중 오류가 발생했습니다.' });
   }
 });
@@ -679,7 +680,7 @@ router.get('/products-with-remain-quantity', authMiddleware, async (req, res) =>
   const connection = await pool.getConnection();
   
   try {
-    console.log('🔄 [warehouse] remain_quantity > 0인 프로젝트 목록 조회 시작');
+    devLog('🔄 [warehouse] remain_quantity > 0인 프로젝트 목록 조회 시작');
     
     // mj_project에서 remain_quantity > 0인 프로젝트들을 조회
     const [products] = await connection.execute(`
@@ -714,37 +715,7 @@ router.get('/products-with-remain-quantity', authMiddleware, async (req, res) =>
       // firstImage 변수 정의
       const firstImage = images.length > 0 ? images[0] : null;
 
-      // 이미지 파일 경로 검증
-      if (firstImage) {
-        const fs = require('fs');
-        const path = require('path');
-        const imagePath = path.join(__dirname, '../uploads/project/mj/registImage', firstImage.file_name);
-        
-        try {
-          const fileExists = fs.existsSync(imagePath);
-          console.log(`🔍 [warehouse] 이미지 파일 존재 확인:`, {
-            projectId: product.project_id,
-            fileName: firstImage.file_name,
-            fullPath: imagePath,
-            exists: fileExists,
-            fileSize: fileExists ? fs.statSync(imagePath).size : 'N/A'
-          });
-        } catch (error) {
-          console.log(`❌ [warehouse] 이미지 파일 확인 중 오류:`, {
-            projectId: product.project_id,
-            fileName: firstImage.file_name,
-            error: error.message
-          });
-        }
-      }
-      
-      console.log(`🖼️ [warehouse] 프로젝트 ${product.project_id} 이미지 조회:`, {
-        projectId: product.project_id,
-        projectName: product.project_name,
-        imageFound: !!firstImage,
-        imageData: firstImage,
-        totalImages: images.length
-      });
+      // 이미지 파일 경로 검증 (상용 환경에서는 로그 비활성화)
 
       const responseDataItem = {
         project_id: product.project_id,
@@ -772,30 +743,12 @@ router.get('/products-with-remain-quantity', authMiddleware, async (req, res) =>
         } : null
       };
 
-      // 이미지 정보 로깅 추가
-      if (firstImage) {
-        console.log(`🖼️ [warehouse] 프로젝트 ${product.project_id} 이미지 URL 생성:`, {
-          projectId: product.project_id,
-          projectName: product.project_name,
-          originalName: firstImage.original_name,
-          fileName: firstImage.file_name,
-          filePath: firstImage.file_path,
-          generatedUrl: `/uploads/project/mj/registImage/${firstImage.file_name}`,
-          finalUrl: `/api/warehouse/image/${firstImage.file_name}`
-        });
-      }
+      // 이미지 정보 로깅 (상용 환경에서는 비활성화)
 
       return responseDataItem;
     }));
 
-    console.log('✅ [warehouse] remain_quantity > 0인 프로젝트 조회 완료:', {
-      totalProjects: products.length,
-      projects: products.map(p => ({
-        id: p.project_id,
-        name: p.project_name,
-        remain_quantity: p.remain_quantity
-      }))
-    });
+    // 조회 완료 (상용 환경에서는 로그 비활성화)
 
     res.json({
       success: true,
@@ -804,7 +757,7 @@ router.get('/products-with-remain-quantity', authMiddleware, async (req, res) =>
     });
 
   } catch (error) {
-    console.error('❌ [warehouse] remain_quantity > 0인 프로젝트 목록 조회 오류:', error);
+    errorLog('❌ [warehouse] remain_quantity > 0인 프로젝트 목록 조회 오류:', error);
     res.status(500).json({ 
       error: 'remain_quantity > 0인 프로젝트 목록 조회 중 오류가 발생했습니다.',
       details: error.message 
@@ -819,7 +772,7 @@ router.get('/products-with-entry-quantity', authMiddleware, async (req, res) => 
   const connection = await pool.getConnection();
   
   try {
-    console.log('🔄 [warehouse] remain_quantity > 0인 프로젝트 목록 조회 (기존 API 호환성)');
+    devLog('🔄 [warehouse] remain_quantity > 0인 프로젝트 목록 조회 (기존 API 호환성)');
     
     // mj_project에서 remain_quantity > 0인 프로젝트들을 조회
     const [products] = await connection.execute(`
