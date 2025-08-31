@@ -1133,4 +1133,160 @@ router.get('/unpaid-balance', authMiddleware, async (req, res) => {
   }
 });
 
+// mj_project에서 지급 예정 선금 정보 조회 (payment_status.advance = false인 프로젝트들의 advance_payment 합계)
+router.get('/advance-payment-schedule', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const userId = req.user.userId;
+    
+    console.log(`[Finance] 지급 예정 선금 정보 조회 시작 - User: ${userId}`);
+    
+    // 지급 예정 선금 조회 (payment_status.advance = false)
+    const [rows] = await connection.execute(`
+      SELECT 
+        SUM(CAST(advance_payment AS DECIMAL(15,2))) as total_advance_payment_schedule,
+        COUNT(*) as project_count
+      FROM mj_project 
+      WHERE JSON_EXTRACT(payment_status, '$.advance') = false
+        AND advance_payment IS NOT NULL
+        AND advance_payment != ''
+        AND advance_payment > 0
+    `);
+    
+    const totalAdvancePaymentSchedule = rows[0]?.total_advance_payment_schedule ?? 0;
+    const projectCount = rows[0]?.project_count ?? 0;
+    
+    console.log(`[Finance] 지급 예정 선금 계산 결과:`);
+    console.log(`  - 총 프로젝트 수: ${projectCount}`);
+    console.log(`  - 총 지급 예정 선금 (CNY): ${totalAdvancePaymentSchedule}`);
+    console.log(`  - 참고: payment_status.advance = false인 프로젝트들의 advance_payment 합계`);
+    
+    // 상세 프로젝트 정보도 조회
+    const [detailRows] = await connection.execute(`
+      SELECT 
+        id,
+        project_name,
+        advance_payment,
+        payment_status
+      FROM mj_project 
+      WHERE JSON_EXTRACT(payment_status, '$.advance') = false
+        AND advance_payment IS NOT NULL
+        AND advance_payment != ''
+        AND advance_payment > 0
+      ORDER BY advance_payment DESC
+    `);
+    
+    console.log(`[Finance] 지급 예정 선금 프로젝트 상세 정보:`);
+    detailRows.forEach((row, index) => {
+      console.log(`  ${index + 1}. 프로젝트 ID: ${row.id}, 이름: ${row.project_name}, 선금: ${row.advance_payment} CNY`);
+    });
+    
+    const responseData = {
+      totalAdvancePaymentSchedule: Number(totalAdvancePaymentSchedule ?? 0),
+      projectCount: projectCount ?? 0,
+      projects: detailRows
+    };
+    
+    console.log(`[Finance] 응답 데이터 구조:`, responseData);
+    
+    devLog(`[Finance] 지급 예정 선금 정보 조회 성공 - User: ${userId}, Total: ${totalAdvancePaymentSchedule} CNY, Projects: ${projectCount}`);
+    
+    res.json({
+      success: true,
+      message: '지급 예정 선금 정보를 성공적으로 조회했습니다.',
+      data: responseData
+    });
+    
+  } catch (error) {
+    errorLog(`[Finance] 지급 예정 선금 정보 조회 실패: ${error.message}`);
+    
+    res.status(500).json({
+      success: false,
+      message: '지급 예정 선금 정보 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// mj_project에서 잔금 지급 예정 정보 조회 (payment_status.balance = false인 프로젝트들의 balance_amount 합계)
+router.get('/balance-payment-schedule', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    const userId = req.user.userId;
+    
+    console.log(`[Finance] 잔금 지급 예정 정보 조회 시작 - User: ${userId}`);
+    
+    // 잔금 지급 예정 조회 (payment_status.balance = false)
+    const [rows] = await connection.execute(`
+      SELECT 
+        SUM(CAST(balance_amount AS DECIMAL(15,2))) as total_balance_payment_schedule,
+        COUNT(*) as project_count
+      FROM mj_project 
+      WHERE JSON_EXTRACT(payment_status, '$.balance') = false
+        AND balance_amount IS NOT NULL
+        AND balance_amount != ''
+        AND balance_amount > 0
+    `);
+    
+    const totalBalancePaymentSchedule = rows[0]?.total_balance_payment_schedule ?? 0;
+    const projectCount = rows[0]?.project_count ?? 0;
+    
+    console.log(`[Finance] 잔금 지급 예정 계산 결과:`);
+    console.log(`  - 총 프로젝트 수: ${projectCount}`);
+    console.log(`  - 총 잔금 지급 예정 (CNY): ${totalBalancePaymentSchedule}`);
+    console.log(`  - 참고: payment_status.balance = false인 프로젝트들의 balance_amount 합계`);
+    
+    // 상세 프로젝트 정보도 조회
+    const [detailRows] = await connection.execute(`
+      SELECT 
+        id,
+        project_name,
+        balance_amount,
+        payment_status
+      FROM mj_project 
+      WHERE JSON_EXTRACT(payment_status, '$.balance') = false
+        AND balance_amount IS NOT NULL
+        AND balance_amount != ''
+        AND balance_amount > 0
+      ORDER BY balance_amount DESC
+    `);
+    
+    console.log(`[Finance] 잔금 지급 예정 프로젝트 상세 정보:`);
+    detailRows.forEach((row, index) => {
+      console.log(`  ${index + 1}. 프로젝트 ID: ${row.id}, 이름: ${row.project_name}, 잔금: ${row.balance_amount} CNY`);
+    });
+    
+    const responseData = {
+      totalBalancePaymentSchedule: Number(totalBalancePaymentSchedule ?? 0),
+      projectCount: projectCount ?? 0,
+      projects: detailRows
+    };
+    
+    console.log(`[Finance] 응답 데이터 구조:`, responseData);
+    
+    devLog(`[Finance] 잔금 지급 예정 정보 조회 성공 - User: ${userId}, Total: ${totalBalancePaymentSchedule} CNY, Projects: ${projectCount}`);
+    
+    res.json({
+      success: true,
+      message: '잔금 지급 예정 정보를 성공적으로 조회했습니다.',
+      data: responseData
+    });
+    
+  } catch (error) {
+    errorLog(`[Finance] 잔금 지급 예정 정보 조회 실패: ${error.message}`);
+    
+    res.status(500).json({
+      success: false,
+      message: '잔금 지급 예정 정보 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  } finally {
+    connection.release();
+  }
+});
+
 module.exports = router; 

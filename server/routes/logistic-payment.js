@@ -238,6 +238,183 @@ router.get('/summary-by-date/:date', auth, async (req, res) => {
   }
 });
 
+// 전체 logistic_payment 테이블의 총 물류비 합계 조회
+router.get('/total-shipping-cost', auth, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('💰 [LogisticPayment] 전체 물류비 합계 조회 시작');
+
+    const [result] = await connection.execute(`
+      SELECT 
+        SUM(CAST(logistic_fee AS DECIMAL(15,2))) as total_shipping_cost,
+        COUNT(*) as total_records,
+        COUNT(DISTINCT packing_code) as unique_packing_codes,
+        COUNT(DISTINCT pl_date) as unique_dates
+      FROM logistic_payment 
+      WHERE logistic_fee IS NOT NULL 
+        AND logistic_fee > 0
+    `);
+
+    const totalShippingCost = Number(result[0]?.total_shipping_cost ?? 0) || 0;
+    
+    console.log(`✅ [LogisticPayment] 전체 물류비 합계 조회 완료: ${totalShippingCost} CNY`);
+    console.log(`📊 [LogisticPayment] 상세 정보:`, {
+      totalShippingCost,
+      totalRecords: result[0]?.total_records ?? 0,
+      uniquePackingCodes: result[0]?.unique_packing_codes ?? 0,
+      uniqueDates: result[0]?.unique_dates ?? 0
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalShippingCost,
+        totalRecords: result[0]?.total_records ?? 0,
+        uniquePackingCodes: result[0]?.unique_packing_codes ?? 0,
+        uniqueDates: result[0]?.unique_dates ?? 0
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [LogisticPayment] 전체 물류비 합계 조회 중 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '전체 물류비 합계 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// logistic_payment에서 미지급 배송비 정보 조회 (is_paid = 0인 데이터들의 logistic_fee 합계)
+router.get('/unpaid-shipping-cost', auth, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('💰 [LogisticPayment] 미지급 배송비 정보 조회 시작');
+
+    const [result] = await connection.execute(`
+      SELECT 
+        SUM(CAST(logistic_fee AS DECIMAL(15,2))) as total_unpaid_shipping_cost,
+        COUNT(*) as total_unpaid_records,
+        COUNT(DISTINCT packing_code) as unique_unpaid_packing_codes,
+        COUNT(DISTINCT pl_date) as unique_unpaid_dates
+      FROM logistic_payment 
+      WHERE logistic_fee IS NOT NULL 
+        AND logistic_fee > 0
+        AND is_paid = 0
+    `);
+
+    const totalUnpaidShippingCost = Number(result[0]?.total_unpaid_shipping_cost ?? 0) || 0;
+    
+    console.log(`✅ [LogisticPayment] 미지급 배송비 정보 조회 완료: ${totalUnpaidShippingCost} CNY`);
+    console.log(`📊 [LogisticPayment] 미지급 상세 정보:`, {
+      totalUnpaidShippingCost,
+      totalUnpaidRecords: result[0]?.total_unpaid_records ?? 0,
+      uniqueUnpaidPackingCodes: result[0]?.unique_unpaid_packing_codes ?? 0,
+      uniqueUnpaidDates: result[0]?.unique_unpaid_dates ?? 0
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalUnpaidShippingCost,
+        totalUnpaidRecords: result[0]?.total_unpaid_records ?? 0,
+        uniqueUnpaidPackingCodes: result[0]?.unique_unpaid_packing_codes ?? 0,
+        uniqueUnpaidDates: result[0]?.unique_unpaid_dates ?? 0
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [LogisticPayment] 미지급 배송비 정보 조회 중 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '미지급 배송비 정보 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// logistic_payment에서 배송비 지급 예정 정보 조회 (is_paid = 0인 데이터들의 logistic_fee 합계)
+router.get('/shipping-payment-schedule', auth, async (req, res) => {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('💰 [LogisticPayment] 배송비 지급 예정 정보 조회 시작');
+
+    const [result] = await connection.execute(`
+      SELECT 
+        SUM(CAST(logistic_fee AS DECIMAL(15,2))) as total_shipping_payment_schedule,
+        COUNT(*) as total_schedule_records,
+        COUNT(DISTINCT packing_code) as unique_schedule_packing_codes,
+        COUNT(DISTINCT pl_date) as unique_schedule_dates
+      FROM logistic_payment 
+      WHERE logistic_fee IS NOT NULL 
+        AND logistic_fee > 0
+        AND is_paid = 0
+    `);
+
+    const totalShippingPaymentSchedule = Number(result[0]?.total_shipping_payment_schedule ?? 0) || 0;
+    
+    console.log(`✅ [LogisticPayment] 배송비 지급 예정 정보 조회 완료: ${totalShippingPaymentSchedule} CNY`);
+    console.log(`📊 [LogisticPayment] 배송비 지급 예정 상세 정보:`, {
+      totalShippingPaymentSchedule,
+      totalScheduleRecords: result[0]?.total_schedule_records ?? 0,
+      uniqueSchedulePackingCodes: result[0]?.unique_schedule_packing_codes ?? 0,
+      uniqueScheduleDates: result[0]?.unique_schedule_dates ?? 0
+    });
+
+    // 상세 프로젝트 정보도 조회 (프로젝트명 대신 포장코드와 설명 사용)
+    const [detailRows] = await connection.execute(`
+      SELECT 
+        lp.id,
+        lp.packing_code,
+        lp.pl_date,
+        lp.logistic_fee,
+        lp.is_paid,
+        lp.description
+      FROM logistic_payment lp
+      WHERE lp.logistic_fee IS NOT NULL 
+        AND lp.logistic_fee > 0
+        AND lp.is_paid = 0
+      ORDER BY lp.logistic_fee DESC
+    `);
+
+    console.log(`[LogisticPayment] 배송비 지급 예정 상세 정보:`);
+    detailRows.forEach((row, index) => {
+      console.log(`  ${index + 1}. 포장코드: ${row.packing_code}, 배송비: ${row.logistic_fee} CNY, 설명: ${row.description || '없음'}`);
+    });
+
+    const responseData = {
+      totalShippingPaymentSchedule,
+      totalScheduleRecords: result[0]?.total_schedule_records ?? 0,
+      uniqueSchedulePackingCodes: result[0]?.unique_schedule_packing_codes ?? 0,
+      uniqueScheduleDates: result[0]?.unique_schedule_dates ?? 0,
+      projects: detailRows
+    };
+
+    res.json({
+      success: true,
+      message: '배송비 지급 예정 정보를 성공적으로 조회했습니다.',
+      data: responseData
+    });
+
+  } catch (error) {
+    console.error('❌ [LogisticPayment] 배송비 지급 예정 정보 조회 중 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '배송비 지급 예정 정보 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  } finally {
+    connection.release();
+  }
+});
+
 // 물류 결제 정보 삭제
 router.delete('/:id', auth, async (req, res) => {
   const connection = await pool.getConnection();
