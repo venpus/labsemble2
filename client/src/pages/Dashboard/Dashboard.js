@@ -7,7 +7,8 @@ import UserManage from './Admin/UserManage';
 import ProjectLists from '../../components/Project/MJ/ProjectLists';
 import ProjectDetails from '../../components/Project/MJ/ProjectDetails';
 import { MJCalendar } from '../../components/Calendar';
-import { MJPackingList, MakePackingList, PackingListDetail, PackingListDateDetail } from '../../components/Logistic';
+import { MJPackingList, MakePackingList, PackingListDetail, PackingListDateDetail, LogisticPayment } from '../../components/Logistic';
+import { Finance } from '../../components/Finance';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -44,12 +45,21 @@ const Dashboard = () => {
     } else if (path.includes('/mj-packing-list/date/')) {
       console.log('🔍 [Dashboard] mj-packing-list/date 감지:', path);
       setSelectedMenu('mj-packing-list-date-detail');
+    } else if (path.includes('/mj-packing-list/logistic-payment')) {
+      console.log('🔍 [Dashboard] mj-packing-list/logistic-payment 감지:', path);
+      setSelectedMenu('mj-packing-list-logistic-payment');
+    } else if (path.includes('/mj-packing-list/date-detail')) {
+      console.log('🔍 [Dashboard] mj-packing-list/date-detail 감지:', path);
+      setSelectedMenu('mj-packing-list-date-detail');
     } else if (path.includes('/mj-packing-list/') && path.split('/').length > 3) {
       console.log('🔍 [Dashboard] mj-packing-list 상세 감지:', path);
       setSelectedMenu('mj-packing-list-detail');
     } else if (path.includes('/mj-packing-list')) {
       console.log('🔍 [Dashboard] mj-packing-list 감지');
       setSelectedMenu('mj-packing-list');
+    } else if (path.includes('/finance')) {
+      console.log('🔍 [Dashboard] finance 감지');
+      setSelectedMenu('finance');
     } else {
       console.log('🔍 [Dashboard] 기본 대시보드 감지');
       setSelectedMenu('dashboard');
@@ -80,6 +90,10 @@ const Dashboard = () => {
         return <PackingListDetail />;
       case 'mj-packing-list-date-detail':
         return <PackingListDateDetail />;
+      case 'mj-packing-list-logistic-payment':
+        return <LogisticPayment />;
+      case 'finance':
+        return <Finance />;
       case 'admin-dashboard':
         return (
           <div className="p-6">

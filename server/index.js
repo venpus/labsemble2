@@ -59,6 +59,8 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/mj-project', require('./routes/mj-project'));
 app.use('/api/warehouse', require('./routes/warehouse'));
 app.use('/api/packing-list', require('./routes/packing-list'));
+app.use('/api/finance', require('./routes/finance'));
+app.use('/api/logistic-payment', require('./routes/logistic-payment'));
 // app.use('/api/products', require('./routes/products'));
 // app.use('/api/orders', require('./routes/orders'));
 // app.use('/api/quotations', require('./routes/quotations'));
@@ -95,19 +97,52 @@ app.get('/api/migration/status', async (req, res) => {
       FROM mj_project
     `);
 
-    // warehouse_entries 테이블 stock 필드 마이그레이션 상태 확인
+    // warehouse stock 필드 마이그레이션 상태 확인
     let warehouseStockStatus = { has_stock_fields: false, total_entries: 0, entries_with_stock: 0 };
     try {
-      const [warehouseColumns] = await pool.execute("SHOW COLUMNS FROM warehouse_entries LIKE 'stock'");
-      const [warehouseData] = await pool.execute("SELECT COUNT(*) as total, COUNT(CASE WHEN stock IS NOT NULL THEN 1 END) as with_stock FROM warehouse_entries");
+      const [stockColumns] = await pool.execute(
+        "SHOW COLUMNS FROM warehouse_entries LIKE 'stock_quantity'"
+      );
+      warehouseStockStatus.has_stock_fields = stockColumns.length > 0;
       
-      warehouseStockStatus = {
-        has_stock_fields: warehouseColumns.length > 0,
-        total_entries: warehouseData[0].total,
-        entries_with_stock: warehouseData[0].with_stock
-      };
+      if (warehouseStockStatus.has_stock_fields) {
+        const [stockData] = await pool.execute(
+          "SELECT COUNT(*) as total, COUNT(CASE WHEN stock_quantity IS NOT NULL THEN 1 END) as with_stock FROM warehouse_entries"
+        );
+        warehouseStockStatus.total_entries = stockData[0].total;
+        warehouseStockStatus.entries_with_stock = stockData[0].with_stock;
+      }
     } catch (error) {
-      console.log('warehouse_entries 테이블 확인 중 오류 (무시됨):', error.message);
+      console.error('warehouse stock 상태 확인 오류:', error);
+    }
+
+    // logistic_payment 테이블 마이그레이션 상태 확인
+    let logisticPaymentStatus = { table_exists: false, total_records: 0, table_structure: [] };
+    try {
+      const [logisticTables] = await pool.execute(
+        "SHOW TABLES LIKE 'logistic_payment'"
+      );
+      logisticPaymentStatus.table_exists = logisticTables.length > 0;
+      
+      if (logisticPaymentStatus.table_exists) {
+        const [logisticData] = await pool.execute(
+          "SELECT COUNT(*) as total FROM logistic_payment"
+        );
+        logisticPaymentStatus.total_records = logisticData[0].total;
+        
+        const [logisticColumns] = await pool.execute(
+          "DESCRIBE logistic_payment"
+        );
+        logisticPaymentStatus.table_structure = logisticColumns.map(col => ({
+          field: col.Field,
+          type: col.Type,
+          null: col.Null,
+          default: col.Default,
+          key: col.Key
+        }));
+      }
+    } catch (error) {
+      console.error('logistic_payment 상태 확인 오류:', error);
     }
 
     // mj_project 테이블 quantity 필드 마이그레이션 상태 확인
@@ -146,6 +181,9 @@ app.get('/api/migration/status', async (req, res) => {
       
       // warehouse_entries 테이블 상태
       warehouse_stock: warehouseStockStatus,
+      
+      // logistic_payment 테이블 상태
+      logistic_payment: logisticPaymentStatus,
       
       // mj_project 테이블 quantity 필드 상태
       mj_project_quantity: mjProjectQuantityStatus

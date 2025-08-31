@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, Package, Calendar, Truck, Box } from 'lucide-react';
 
 const PackingListDateDetail = () => {
-  const { date } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const date = searchParams.get('date');
   const [packingData, setPackingData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -140,12 +141,7 @@ const PackingListDateDetail = () => {
         console.log('📊 [PackingListDateDetail] 요약 정보 계산:', {
           totalBoxes,
           totalProducts,
-          logisticCompanies,
-          individualBoxCounts: groupedData.map(item => ({
-            packing_code: item.packing_code,
-            box_count: item.box_count,
-            note: '포장코드별 1회만 합산됨'
-          }))
+          logisticCompanies
         });
 
         setSummary({
@@ -174,16 +170,25 @@ const PackingListDateDetail = () => {
   };
 
   // 사용자 권한 확인
-  const checkUserRole = () => {
+  const checkUserRole = async () => {
     try {
       const token = localStorage.getItem('token');
-      if (token) {
-        // JWT 토큰에서 사용자 정보 추출
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setIsAdmin(payload.isAdmin || false);
+      if (!token) {
+        throw new Error('인증 토큰이 없습니다.');
+      }
+
+      const response = await fetch('/api/users/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const userData = await response.json();
+        setIsAdmin(userData.role === 'admin');
         console.log('🔐 [PackingListDateDetail] 사용자 권한 확인:', {
-          isAdmin: payload.isAdmin,
-          userId: payload.userId
+          role: userData.role,
+          isAdmin: userData.role === 'admin'
         });
       }
     } catch (error) {
@@ -192,10 +197,16 @@ const PackingListDateDetail = () => {
     }
   };
 
-  // 컴포넌트 마운트 시 데이터 로드 및 권한 확인
+  // 컴포넌트 마운트 시 데이터 로드
   useEffect(() => {
-    checkUserRole();
-    fetchPackingData();
+    if (date) {
+      console.log('📅 [PackingListDateDetail] 날짜 파라미터 감지:', date);
+      checkUserRole();
+      fetchPackingData();
+    } else {
+      console.log('⚠️ [PackingListDateDetail] 날짜 파라미터가 없음');
+      setLoading(false);
+    }
   }, [date]);
 
   // 뒤로 가기
@@ -239,6 +250,50 @@ const PackingListDateDetail = () => {
       toast.error('삭제에 실패했습니다: ' + error.message);
     }
   };
+
+  if (!date) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                패킹리스트 상세
+              </h1>
+              <p className="text-gray-600">날짜를 선택하여 패킹리스트 상세 정보를 확인할 수 있습니다.</p>
+            </div>
+            
+            <button
+              onClick={handleGoBack}
+              className="inline-flex items-center px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              뒤로 가기
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-8 text-center">
+          <div className="text-yellow-600 mb-4">
+            <Calendar className="w-16 h-16 mx-auto" />
+          </div>
+          <h2 className="text-xl font-semibold text-yellow-800 mb-2">
+            날짜를 선택해주세요
+          </h2>
+          <p className="text-yellow-700 mb-4">
+            MJPackingList에서 특정 날짜의 상세보기 아이콘을 클릭하여<br />
+            해당 날짜의 패킹리스트 상세 정보를 확인할 수 있습니다.
+          </p>
+          <button
+            onClick={handleGoBack}
+            className="px-6 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+          >
+            패킹리스트로 돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -391,10 +446,10 @@ const PackingListDateDetail = () => {
                             <span className="text-lg font-bold text-gray-900">
                               📦 포장코드: {packingGroup.packing_code}
                             </span>
-                            <span className="text-sm font-semibold text-blue-600">
-                              총 {packingGroup.box_count ? packingGroup.box_count.toLocaleString() : '0'} 박스 (포장코드별)
+                            <span className="text-lg font-bold text-blue-600">
+                              총 {packingGroup.box_count ? packingGroup.box_count.toLocaleString() : '0'} 박스
                             </span>
-                            <span className="text-sm font-medium text-purple-600">
+                            <span className="text-lg font-bold text-purple-600">
                               물류회사: {packingGroup.logistic_company || '미지정'}
                             </span>
                           </div>

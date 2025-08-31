@@ -25,8 +25,22 @@ useEffect(() => {
     handlePaymentStatusChange,
     handleUnitPriceChange,
     handleFeeRateChange,
-    handleAdditionalCostSave
+    handleAdditionalCostSave,
+    handleSaveAllPaymentData
   } = usePaymentActions(project, paymentData, updatePaymentData, isAdmin);
+
+  // 저장 중 상태 관리
+  const [isSaving, setIsSaving] = useState(false);
+
+  // 모든 정보 저장 핸들러
+  const handleSaveAll = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      await handleSaveAllPaymentData();
+    } finally {
+      setIsSaving(false);
+    }
+  }, [handleSaveAllPaymentData]);
 
   // 컴포넌트 마운트 시 admin 권한 확인
   useEffect(() => {
@@ -76,6 +90,8 @@ useEffect(() => {
         isAdmin={isAdmin}
         isAdminLoading={isAdminLoading}
         paymentStatus={paymentData.paymentStatus}
+        onSaveAll={handleSaveAll}
+        isSaving={isSaving}
       />
 
       {/* 결제 상세 테이블 */}

@@ -862,8 +862,35 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
     // advance_due_date 처리
     const processedAdvanceDueDate = processDate(advanceDueDate);
     
-    // Payment 데이터 업데이트
+    // balance_amount 계산
+    let totalAdditionalCosts = 0;
+    if (safeAdditionalCostItems && safeAdditionalCostItems !== '[]') {
+      try {
+        const items = JSON.parse(safeAdditionalCostItems);
+        totalAdditionalCosts = items.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+      } catch (error) {
+        console.error('추가 비용 항목 파싱 실패:', error);
+        totalAdditionalCosts = 0;
+      }
+    }
+    
+    const numericBalanceAmount = numericFee + numericFactoryShippingCost + totalAdditionalCosts;
+    
+    // balance_amount 계산 디버깅 로그
+    console.log('🔢 [서버] balance_amount 계산 과정:', {
+      프로젝트ID: projectId,
+      수수료: numericFee,
+      배송비: numericFactoryShippingCost,
+      추가비용: totalAdditionalCosts,
+      계산된_잔금: numericBalanceAmount,
+      원본_데이터: {
+        fee: req.body.fee,
+        factory_shipping_cost: req.body.factory_shipping_cost,
+        additional_cost_items: req.body.additional_cost_items
+      }
+    });
 
+    // Payment 데이터 업데이트
     await connection.execute(
       `UPDATE mj_project SET 
         unit_price = ?,
@@ -876,6 +903,7 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
         factory_shipping_cost = ?,
         subtotal = ?,
         fee = ?,
+        balance_amount = ?,
         total_amount = ?,
         advance_payment = ?,
         additional_cost_items = ?,
@@ -892,6 +920,7 @@ router.post('/:id/payment', authMiddleware, async (req, res) => {
         numericFactoryShippingCost,
         numericSubtotal,
         numericFee,
+        numericBalanceAmount,
         numericTotalAmount,
         numericAdvancePayment,
         safeAdditionalCostItems,

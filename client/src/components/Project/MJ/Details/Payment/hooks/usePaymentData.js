@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
 
 export const usePaymentData = (project) => {
   // 초기 로딩 상태
@@ -47,6 +48,33 @@ export const usePaymentData = (project) => {
   
   // 추가 비용 항목들을 관리하는 상태 (최대 5개)
   const [additionalCostItems, setAdditionalCostItems] = useState([]);
+  
+  // balanceAmount 상태 추가 (DB에서 로드된 값)
+  const [balanceAmount, setBalanceAmount] = useState(Number(project.balance_amount) || 0);
+  
+  // 디바운싱을 위한 ref
+  const saveTimeoutRef = useRef(null);
+  const lastSavedBalanceAmount = useRef(Number(project.balance_amount) || 0);
+
+  // 잔금 계산 함수 (중앙화) - 먼저 선언
+  const calculateBalanceAmount = useCallback((fee, shippingCost, items) => {
+    const totalAdditionalCosts = items.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+    const balanceAmount = Number(fee || 0) + Number(shippingCost || 0) + totalAdditionalCosts;
+    
+    console.log('🔢 [클라이언트] 잔금 계산:', {
+      수수료: fee,
+      배송비: shippingCost,
+      추가비용: totalAdditionalCosts,
+      총잔금: balanceAmount,
+      계산_세부사항: {
+        수수료_Number: Number(fee || 0),
+        배송비_Number: Number(shippingCost || 0),
+        추가비용_합계: totalAdditionalCosts
+      }
+    });
+    
+    return balanceAmount;
+  }, []);
 
   // 날짜 형식 처리 유틸리티 함수
   const formatDateForDB = useCallback((dateValue) => {
@@ -77,6 +105,23 @@ export const usePaymentData = (project) => {
     if (isInitialized) return; // 이미 초기화된 경우 스킵
     
     console.log('🔄 Payment 데이터 초기화 시작...');
+    
+    // 초기 balanceAmount 설정
+    const initialBalanceAmount = Number(project.balance_amount) || 0;
+    setBalanceAmount(initialBalanceAmount);
+    lastSavedBalanceAmount.current = initialBalanceAmount;
+    
+    // 초기 잔금 계산 (DB 값이 없거나 0인 경우)
+    if (initialBalanceAmount === 0) {
+      const calculatedBalanceAmount = calculateBalanceAmount(
+        Number(project.fee) || 0,
+        Number(project.factory_shipping_cost) || 0,
+        project.additional_cost_items ? JSON.parse(project.additional_cost_items) : []
+      );
+      setBalanceAmount(calculatedBalanceAmount);
+      lastSavedBalanceAmount.current = calculatedBalanceAmount;
+      console.log('🔢 초기 잔금 계산 완료:', calculatedBalanceAmount);
+    }
     
     // 수수료율 설정 (기존 저장된 값 또는 기본값 0%) - 초기 로딩 시에만
     if (project.fee_rate !== undefined && project.fee_rate !== null && selectedFeeRate === 0) {
@@ -189,11 +234,29 @@ export const usePaymentData = (project) => {
     console.log('✅ Payment 데이터 초기화 완료');
   }, [project.fee_rate, project.payment_status, project.payment_dates, project.balance_due_date, project.advance_due_date, project.payment_due_dates, project.subtotal, project.unit_price, project.quantity, project.fee, project.total_amount, project.additional_cost_items, isInitialized]);
 
+  // 컴포넌트 언마운트 시 정리
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // 단가 또는 수량 변경 시 총계 자동 재계산
   useEffect(() => {
     const newSubtotal = editableUnitPrice * (project.quantity || 0);
     setEditableSubtotal(newSubtotal);
   }, [editableUnitPrice, project.quantity]);
+
+  // 수수료, 배송비, 추가비용 변경 시 잔금 자동 재계산
+  useEffect(() => {
+    if (isInitialized) {
+      const newBalanceAmount = calculateBalanceAmount(editableFee, editableShippingCost, additionalCostItems);
+      setBalanceAmount(newBalanceAmount);
+      console.log('🔄 잔금 자동 재계산 (useEffect):', newBalanceAmount);
+    }
+  }, [editableFee, editableShippingCost, additionalCostItems, calculateBalanceAmount, isInitialized]);
 
   // 프로젝트 데이터 변경 시 단가 동기화 (초기 로딩 시에만)
   useEffect(() => {
@@ -245,6 +308,8 @@ export const usePaymentData = (project) => {
   
   const totalAdditionalCosts = additionalCostItems.reduce((sum, item) => sum + item.cost, 0);
 
+
+
   // 결제 데이터 업데이트 함수
   const updatePaymentData = useCallback((updates) => {
     console.log('Payment 데이터 업데이트:', updates);
@@ -257,31 +322,49 @@ export const usePaymentData = (project) => {
           const newFee = (editableSubtotal * value) / 100;
           setEditableFee(newFee);
           console.log('수수료율 및 수수료 업데이트:', value, newFee);
+          
+          // 잔금 재계산
+          const newBalanceAmount = calculateBalanceAmount(newFee, editableShippingCost, additionalCostItems);
+          setBalanceAmount(newBalanceAmount);
           break;
+          
         case 'editableFee':
           setEditableFee(value);
           console.log('수수료 업데이트:', value);
+          
+          // 잔금 재계산
+          const newBalanceAmountFee = calculateBalanceAmount(value, editableShippingCost, additionalCostItems);
+          setBalanceAmount(newBalanceAmountFee);
+          
+          // balanceAmount 변경 시 DB에 자동 저장
+          saveBalanceAmountToDB(newBalanceAmountFee);
           break;
+          
         case 'paymentStatus':
           setPaymentStatus(value);
           console.log('결제 상태 업데이트:', value);
           break;
+          
         case 'paymentDates':
           setPaymentDates(value);
           console.log('결제 날짜 업데이트:', value);
           break;
+          
         case 'balanceDueDate':
           setBalanceDueDate(value);
           console.log('잔금 예정일 업데이트:', value);
           break;
+          
         case 'advanceDueDate':
           setAdvanceDueDate(value);
           console.log('선금 예정일 업데이트:', value);
           break;
+          
         case 'paymentDueDates':
           setPaymentDueDates(value);
           console.log('결제 예정일 업데이트:', value);
           break;
+          
         case 'editableUnitPrice':
           console.log('단가 상태 업데이트:', value);
           setEditableUnitPrice(value);
@@ -292,26 +375,109 @@ export const usePaymentData = (project) => {
             setEditableSubtotal(newSubtotal);
             setEditableFee(newFee);
             console.log('총계 및 수수료 자동 재계산:', { 총계: newSubtotal, 수수료: newFee });
+            
+            // 잔금 재계산
+            const newBalanceAmount = calculateBalanceAmount(newFee, editableShippingCost, additionalCostItems);
+            setBalanceAmount(newBalanceAmount);
           }
           break;
+          
         case 'editableShippingCost':
           setEditableShippingCost(value);
           console.log('배송비 업데이트:', value);
+          
+          // 잔금 재계산
+          const newBalanceAmountShipping = calculateBalanceAmount(editableFee, value, additionalCostItems);
+          setBalanceAmount(newBalanceAmountShipping);
+          
+          // balanceAmount 변경 시 DB에 자동 저장
+          saveBalanceAmountToDB(newBalanceAmountShipping);
           break;
+          
         case 'editableSubtotal':
           setEditableSubtotal(value);
           console.log('총계 업데이트:', value);
           break;
+          
         case 'additionalCostItems':
           setAdditionalCostItems(value);
           console.log('추가 비용 항목 업데이트:', value);
+          
+          // 잔금 재계산
+          const newBalanceAmountItems = calculateBalanceAmount(editableFee, editableShippingCost, value);
+          setBalanceAmount(newBalanceAmountItems);
+          
+          // balanceAmount 변경 시 DB에 자동 저장
+          saveBalanceAmountToDB(newBalanceAmountItems);
           break;
+          
         default:
           console.log('알 수 없는 업데이트 키:', key, value);
           break;
       }
     });
-  }, [project.quantity, selectedFeeRate]);
+  }, [project.quantity, selectedFeeRate, editableSubtotal, editableFee, editableShippingCost, additionalCostItems, calculateBalanceAmount]);
+
+  // balanceAmount를 DB에 자동 저장하는 함수 (디바운싱 적용)
+  const saveBalanceAmountToDB = useCallback(async (newBalanceAmount) => {
+    // 이전 저장 요청 취소
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // 마지막으로 저장된 값과 동일하면 저장하지 않음
+    if (newBalanceAmount === lastSavedBalanceAmount.current) {
+      console.log('ℹ️ balanceAmount가 변경되지 않아 저장을 건너뜁니다:', newBalanceAmount);
+      return;
+    }
+
+    // 디바운싱: 500ms 후에 저장
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.log('토큰이 없어 balanceAmount 자동 저장을 건너뜁니다.');
+          return;
+        }
+
+        console.log('🔄 balanceAmount 자동 저장 시작:', newBalanceAmount);
+
+        const paymentDataToSave = {
+          unitPrice: editableUnitPrice,
+          selectedFeeRate: selectedFeeRate,
+          paymentStatus: paymentStatus,
+          paymentDates: paymentDates,
+          balanceDueDate: balanceDueDate,
+          advanceDueDate: advanceDueDate,
+          paymentDueDates: paymentDueDates,
+          factoryShippingCost: editableShippingCost,
+          subtotal: editableSubtotal,
+          fee: editableFee,
+          totalAmount: editableSubtotal + newBalanceAmount,
+          advancePayment: editableSubtotal,
+          additionalCostItems: JSON.stringify(additionalCostItems)
+        };
+
+        await axios.post(
+          `/api/mj-project/${project.id}/payment`,
+          paymentDataToSave,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        // 저장 성공 시 마지막 저장 값 업데이트
+        lastSavedBalanceAmount.current = newBalanceAmount;
+        console.log('✅ balanceAmount가 자동으로 DB에 저장되었습니다:', newBalanceAmount);
+      } catch (error) {
+        console.error('❌ balanceAmount 자동 저장 오류:', error);
+        // 사용자에게 에러 표시하지 않음 (자동 저장이므로)
+      }
+    }, 500);
+  }, [project.id, editableUnitPrice, selectedFeeRate, paymentStatus, paymentDates, balanceDueDate, advanceDueDate, paymentDueDates, editableShippingCost, editableSubtotal, editableFee, additionalCostItems]);
 
   // 결제 데이터 초기화 함수
   const resetPaymentData = useCallback(() => {
@@ -352,6 +518,7 @@ export const usePaymentData = (project) => {
       editableShippingCost,
       editableSubtotal,
       additionalCostItems,
+      balanceAmount,
       totalAmount,
       totalAdditionalCosts
     },

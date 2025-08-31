@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Package } from 'lucide-react';
+import { Plus, Package, Eye } from 'lucide-react';
 
 const MJPackingList = () => {
   const navigate = useNavigate();
@@ -62,6 +62,8 @@ const MJPackingList = () => {
             if (item.logistic_company && !existingGroup.logistic_companies.includes(item.logistic_company)) {
               existingGroup.logistic_companies.push(item.logistic_company);
             }
+            
+            // 배송비 정보는 logistic_payment 테이블에서 별도로 조회하므로 여기서는 제거
           } else {
             // 새로운 그룹 생성
             acc.push({
@@ -70,6 +72,9 @@ const MJPackingList = () => {
               packing_codes: [item.packing_code], // 포장코드 추적을 위한 배열 추가
               product_names: [item.product_name],
               logistic_companies: item.logistic_company ? [item.logistic_company] : [],
+              total_shipping_cost: 0, // logistic_payment 테이블에서 조회
+              paid_shipping_count: 0, // logistic_payment 테이블에서 조회
+              unpaid_shipping_count: 0, // logistic_payment 테이블에서 조회
               created_at: item.created_at,
               updated_at: item.updated_at
             });
@@ -85,15 +90,62 @@ const MJPackingList = () => {
           return new Date(b.pl_date) - new Date(a.pl_date);
         });
 
-        setPackingLists(groupedData);
+        // 각 날짜별로 물류비 합계 조회
+        const updatedGroupedData = await Promise.all(
+          groupedData.map(async (group) => {
+            if (group.pl_date === '날짜 미지정') {
+              return group;
+            }
+            
+            try {
+              const logisticResponse = await fetch(`/api/logistic-payment/summary-by-date/${group.pl_date}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              });
+              
+              if (logisticResponse.ok) {
+                const logisticResult = await logisticResponse.json();
+                if (logisticResult.success && logisticResult.data) {
+                  // 포장코드별 물류비 합계 계산
+                  const totalLogisticFee = logisticResult.data.reduce((sum, item) => {
+                    const fee = parseFloat(item.total_logistic_fee) || 0;
+                    return sum + fee;
+                  }, 0);
+                  
+                  const totalPaidCount = logisticResult.data.reduce((sum, item) => sum + (parseInt(item.paid_count) || 0), 0);
+                  const totalUnpaidCount = logisticResult.data.reduce((sum, item) => sum + (parseInt(item.unpaid_count) || 0), 0);
+                  
+                  console.log(`💰 [MJPackingList] ${group.pl_date} 물류비 합계: ${totalLogisticFee}원 (결제완료: ${totalPaidCount}건, 미결제: ${totalUnpaidCount}건)`);
+                  
+                  return {
+                    ...group,
+                    total_shipping_cost: totalLogisticFee,
+                    paid_shipping_count: totalPaidCount,
+                    unpaid_shipping_count: totalUnpaidCount
+                  };
+                }
+              }
+            } catch (error) {
+              console.log(`⚠️ [MJPackingList] ${group.pl_date} 물류비 조회 실패 (무시됨):`, error.message);
+            }
+            
+            return group;
+          })
+        );
+
+        setPackingLists(updatedGroupedData);
         console.log('📊 [MJPackingList] 패킹 리스트 데이터 로드 완료:', {
-          totalGroups: groupedData.length,
-          groupDetails: groupedData.map(group => ({
+          totalGroups: updatedGroupedData.length,
+          groupDetails: updatedGroupedData.map(group => ({
             pl_date: group.pl_date,
             packing_codes: group.packing_codes,
             total_box_count: group.total_box_count,
             product_count: group.product_names.length,
-            logistic_companies: group.logistic_companies
+            logistic_companies: group.logistic_companies,
+            total_shipping_cost: group.total_shipping_cost,
+            paid_shipping_count: group.paid_shipping_count,
+            unpaid_shipping_count: group.paid_shipping_count
           }))
         });
       } else {
@@ -279,6 +331,65 @@ const MJPackingList = () => {
         </button>
       </div>
 
+      {/* 배송비 요약 카드 */}
+      {packingLists.length > 0 && (
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 cursor-pointer hover:bg-orange-100 transition-colors"
+               onClick={() => navigate('/dashboard/mj-packing-list/logistic-payment')}
+               title="클릭하여 물류 결제 관리 페이지로 이동">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-orange-700">총 배송비</p>
+                <p className="text-2xl font-bold text-orange-800">
+                  {packingLists.reduce((sum, item) => sum + item.total_shipping_cost, 0).toLocaleString()}원
+                </p>
+              </div>
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 cursor-pointer hover:bg-green-100 transition-colors"
+               onClick={() => navigate('/dashboard/mj-packing-list/logistic-payment')}
+               title="클릭하여 물류 결제 관리 페이지로 이동">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-green-700">결제완료</p>
+                <p className="text-2xl font-bold text-green-800">
+                  {packingLists.reduce((sum, item) => sum + item.paid_shipping_count, 0)}건
+                </p>
+              </div>
+              <div className="p-2 bg-green-100 rounded-lg">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 cursor-pointer hover:bg-red-100 transition-colors"
+               onClick={() => navigate('/dashboard/mj-packing-list/logistic-payment')}
+               title="클릭하여 물류 결제 관리 페이지로 이동">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-red-700">미결제</p>
+                <p className="text-2xl font-bold text-red-800">
+                  {packingLists.reduce((sum, item) => sum + item.unpaid_shipping_count, 0)}건
+                </p>
+              </div>
+              <div className="p-2 bg-red-100 rounded-lg">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 패킹 리스트 테이블 */}
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
@@ -300,12 +411,24 @@ const MJPackingList = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   물류회사
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  배송비
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  배송비 결제여부
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  물류비 상세
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  상세보기
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {packingLists.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="9" className="px-6 py-12 text-center text-gray-500">
                     저장된 패킹 리스트가 없습니다.
                   </td>
                 </tr>
@@ -313,23 +436,21 @@ const MJPackingList = () => {
                 getCurrentPageData().map((item, index) => (
                   <tr 
                     key={item.pl_date} 
-                    className="hover:bg-blue-50 cursor-pointer transition-colors duration-200"
-                    onClick={() => handleDateClick(item.pl_date)}
-                    title={`${item.pl_date} 상세보기 - 클릭하여 상세페이지로 이동`}
+                    className="hover:bg-gray-50 transition-colors"
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {(currentPage - 1) * itemsPerPage + index + 1}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                       <div className="flex items-center">
-                        <span className="inline-flex items-center px-3 py-2 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-medium hover:bg-blue-100 transition-colors">
+                        <span className="inline-flex items-center px-3 py-2 rounded-lg bg-gray-50 text-gray-700 border border-gray-200 font-medium">
                           📅 {item.pl_date === '날짜 미지정' ? '날짜 미지정' : new Date(item.pl_date).toLocaleDateString('ko-KR')}
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div>
-                        <span className="font-semibold text-lg text-blue-600">
+                        <span className="font-semibold text-lg text-gray-700">
                           {item.total_box_count.toLocaleString()} 박스
                         </span>
                       </div>
@@ -338,7 +459,7 @@ const MJPackingList = () => {
                       <div className="space-y-1 max-w-md">
                         {item.product_names.map((productName, productIndex) => (
                           <div key={productIndex} className="flex items-center">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                               {productName}
                             </span>
                           </div>
@@ -349,13 +470,81 @@ const MJPackingList = () => {
                       <div className="space-y-1">
                         {item.logistic_companies.length > 0 ? (
                           item.logistic_companies.map((company, companyIndex) => (
-                            <span key={companyIndex} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            <span key={companyIndex} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                               {company}
                             </span>
                           ))
                         ) : (
                           <span className="text-gray-400 text-xs">미지정</span>
                         )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex flex-col">
+                        <span 
+                          className="font-semibold text-lg text-orange-600 cursor-pointer hover:text-orange-700 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/dashboard/mj-packing-list/logistic-payment?date=${encodeURIComponent(item.pl_date)}`);
+                          }}
+                          title="클릭하여 물류 결제 관리 페이지로 이동"
+                        >
+                          {item.total_shipping_cost ? `${item.total_shipping_cost.toLocaleString()}원` : '0원'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex flex-col items-start">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span 
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 cursor-pointer hover:bg-green-200 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/dashboard/mj-packing-list/logistic-payment?date=${encodeURIComponent(item.pl_date)}`);
+                            }}
+                            title="클릭하여 물류 결제 관리 페이지로 이동"
+                          >
+                            ✅ 결제완료: {item.paid_shipping_count}건
+                          </span>
+                          <span 
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 cursor-pointer hover:bg-red-200 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/dashboard/mj-packing-list/logistic-payment?date=${encodeURIComponent(item.pl_date)}`);
+                            }}
+                            title="클릭하여 물류 결제 관리 페이지로 이동"
+                          >
+                            ❌ 미결제: {item.unpaid_shipping_count}건
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex justify-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/dashboard/mj-packing-list/logistic-payment?date=${encodeURIComponent(item.pl_date)}`);
+                          }}
+                          className="inline-flex items-center justify-center w-8 h-8 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors"
+                          title={`${item.pl_date} 출고일자의 물류비 상세 정보 보기`}
+                        >
+                          <Package className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex justify-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/dashboard/mj-packing-list/date-detail?date=${encodeURIComponent(item.pl_date)}`);
+                          }}
+                          className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors"
+                          title={`${item.pl_date} 출고일자의 상세 패킹리스트 보기`}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -462,6 +651,16 @@ const MJPackingList = () => {
             <div>• 총 상품 수: {packingLists.reduce((sum, item) => sum + item.product_names.length, 0)}개</div>
             <div>• 총 박스 수: {packingLists.reduce((sum, item) => sum + item.total_box_count, 0).toLocaleString()}박스 (포장코드별 1회씩 합산)</div>
             <div>• 사용된 물류회사: {Array.from(new Set(packingLists.flatMap(item => item.logistic_companies))).join(', ') || '없음'}</div>
+            <div>• 총 배송비: <span 
+              className="cursor-pointer hover:text-blue-600 underline"
+              onClick={() => navigate('/dashboard/mj-packing-list/logistic-payment')}
+              title="클릭하여 물류 결제 관리 페이지로 이동"
+            >{packingLists.reduce((sum, item) => sum + item.total_shipping_cost, 0).toLocaleString()}원</span></div>
+            <div>• 배송비 결제 현황: <span 
+              className="cursor-pointer hover:text-blue-600 underline"
+              onClick={() => navigate('/dashboard/mj-packing-list/logistic-payment')}
+              title="클릭하여 물류 결제 관리 페이지로 이동"
+            >{packingLists.reduce((sum, item) => sum + item.paid_shipping_count, 0)}건 결제완료 / {packingLists.reduce((sum, item) => sum + item.unpaid_shipping_count, 0)}건 미결제</span></div>
           </div>
         </div>
       )}

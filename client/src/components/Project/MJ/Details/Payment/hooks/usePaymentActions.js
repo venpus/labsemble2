@@ -13,6 +13,7 @@ export const usePaymentActions = (project, paymentData, updatePaymentData, isAdm
     editableShippingCost,
     editableSubtotal,
     editableFee,
+    balanceAmount,
     totalAmount,
     additionalCostItems
   } = paymentData;
@@ -264,6 +265,10 @@ export const usePaymentActions = (project, paymentData, updatePaymentData, isAdm
         return; // 토큰이 없으면 조용히 리턴
       }
 
+      // 새로운 balanceAmount 계산
+      const totalAdditionalCosts = additionalCostItems.reduce((sum, item) => sum + item.cost, 0);
+      const newBalanceAmount = newFee + editableShippingCost + totalAdditionalCosts;
+
       const paymentDataToSave = {
         unitPrice: paymentData.editableUnitPrice,
         selectedFeeRate: rate,
@@ -348,11 +353,72 @@ export const usePaymentActions = (project, paymentData, updatePaymentData, isAdm
     }
   }, [isAdmin, project.id, selectedFeeRate, paymentStatus, balanceDueDate, advanceDueDate, paymentDueDates, editableShippingCost, editableSubtotal, editableFee, totalAmount, paymentData]);
 
+  // 모든 결제 정보를 한 번에 저장하는 함수
+  const handleSaveAllPaymentData = useCallback(async () => {
+    if (!isAdmin) {
+      toast.error('admin 권한이 필요합니다.');
+      return;
+    }
+
+    console.log('🔄 모든 결제 정보 저장 시작...');
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('로그인이 필요합니다.');
+        return;
+      }
+
+      // 현재 balanceAmount 계산
+      const totalAdditionalCosts = additionalCostItems.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+      const currentBalanceAmount = Number(editableFee) + Number(editableShippingCost) + totalAdditionalCosts;
+
+      const paymentDataToSave = {
+        unitPrice: paymentData.editableUnitPrice,
+        selectedFeeRate: selectedFeeRate,
+        paymentStatus: paymentStatus,
+        paymentDates: paymentDates,
+        balanceDueDate: balanceDueDate,
+        advanceDueDate: advanceDueDate,
+        paymentDueDates: paymentDueDates,
+        factoryShippingCost: editableShippingCost,
+        subtotal: editableSubtotal,
+        fee: editableFee,
+        totalAmount: Number(editableSubtotal) + currentBalanceAmount,
+        advancePayment: editableSubtotal,
+        additionalCostItems: JSON.stringify(additionalCostItems)
+      };
+
+      console.log('📤 저장할 데이터:', paymentDataToSave);
+
+      await axios.post(
+        `/api/mj-project/${project.id}/payment`,
+        paymentDataToSave,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log('✅ 모든 결제 정보가 성공적으로 저장되었습니다.');
+      toast.success('모든 결제 정보가 저장되었습니다.');
+      
+      return true;
+    } catch (error) {
+      console.error('❌ 모든 결제 정보 저장 오류:', error);
+      toast.error('결제 정보 저장 중 오류가 발생했습니다.');
+      return false;
+    }
+  }, [isAdmin, project.id, paymentData, selectedFeeRate, paymentStatus, paymentDates, balanceDueDate, advanceDueDate, paymentDueDates, editableShippingCost, editableSubtotal, editableFee, additionalCostItems]);
+
   return {
     handleSavePayment,
     handlePaymentStatusChange,
     handleUnitPriceChange,
     handleFeeRateChange,
-    handleAdditionalCostSave
+    handleAdditionalCostSave,
+    handleSaveAllPaymentData
   };
 }; 

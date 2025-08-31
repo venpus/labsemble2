@@ -16,6 +16,7 @@ const PaymentSummary = ({
     editableShippingCost,
     editableFee,
     additionalCostItems,
+    balanceAmount,
     paymentStatus,
     paymentDates,
     balanceDueDate,
@@ -23,9 +24,6 @@ const PaymentSummary = ({
   } = paymentData;
 
   const totalAdditionalCosts = additionalCostItems.reduce((sum, item) => sum + item.cost, 0);
-  const balanceAmount = editableFee + editableShippingCost + totalAdditionalCosts;
-
-
 
   // 잔금 결제완료 체크 전 예정일 확인
   const handleBalancePaymentCheck = () => {
@@ -38,8 +36,6 @@ const PaymentSummary = ({
     // 결제 예정일이 설정된 경우에만 결제완료 체크 진행
     onPaymentStatusChange('balance');
   };
-
-
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

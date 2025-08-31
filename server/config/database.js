@@ -218,6 +218,51 @@ const migratePaymentColumns = async () => {
       // 필드가 이미 존재하는 경우 무시
     }
     
+    // balance_amount 컬럼 추가
+    try {
+      await connection.execute('ALTER TABLE mj_project ADD COLUMN IF NOT EXISTS balance_amount DECIMAL(15,2) DEFAULT 0 COMMENT "잔금 총액 (수수료 + 배송비 + 추가비용)"');
+      console.log('✅ balance_amount 필드 추가/확인 완료');
+    } catch (error) {
+      // 필드가 이미 존재하는 경우 무시
+    }
+    
+    // balance_amount 인덱스 추가
+    try {
+      await connection.execute('CREATE INDEX IF NOT EXISTS idx_balance_amount ON mj_project(balance_amount)');
+      console.log('✅ balance_amount 인덱스 추가/확인 완료');
+    } catch (error) {
+      if (error.code === 'ER_DUP_KEYNAME') {
+        console.log('ℹ️ balance_amount 인덱스가 이미 존재합니다.');
+      } else {
+        console.log('ℹ️ balance_amount 인덱스 추가 중 오류 (무시됨):', error.message);
+      }
+    }
+    
+    // 기존 데이터에 대한 balance_amount 계산 및 업데이트
+    try {
+      const [updateResult] = await connection.execute(`
+        UPDATE mj_project 
+        SET balance_amount = COALESCE(fee, 0) + COALESCE(factory_shipping_cost, 0) + 
+            CASE 
+                WHEN additional_cost_items IS NOT NULL AND additional_cost_items != '[]' 
+                THEN (
+                    SELECT COALESCE(SUM(CAST(JSON_EXTRACT(value, '$.cost') AS DECIMAL(15,2))), 0)
+                    FROM JSON_TABLE(additional_cost_items, '$[*]' COLUMNS (value JSON PATH '$')) AS jt
+                )
+                ELSE 0 
+            END
+        WHERE balance_amount IS NULL OR balance_amount = 0
+      `);
+      
+      if (updateResult.affectedRows > 0) {
+        console.log(`✅ ${updateResult.affectedRows}개 프로젝트의 balance_amount가 계산되어 업데이트되었습니다.`);
+      } else {
+        console.log('ℹ️ 업데이트할 balance_amount가 없습니다.');
+      }
+    } catch (error) {
+      console.log('ℹ️ balance_amount 계산 업데이트 중 오류 (무시됨):', error.message);
+    }
+    
     connection.release();
     return { success: true, message: 'Payment 관련 컬럼 마이그레이션이 완료되었습니다.' };
   } catch (error) {
@@ -691,6 +736,416 @@ async function migrateWarehouseStockFields() {
   }
 }
 
+// finance_incoming 테이블 마이그레이션 함수
+async function migrateFinanceIncomingTable() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 finance_incoming 테이블 마이그레이션 시작...');
+    
+    // finance_incoming 테이블 존재 여부 확인
+    const [tables] = await connection.execute(
+      "SHOW TABLES LIKE 'finance_incoming'"
+    );
+
+    if (tables.length === 0) {
+      // finance_incoming 테이블 생성 (확장된 구조)
+      await connection.execute(`
+        CREATE TABLE finance_incoming (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT NOT NULL,
+          transaction_date DATE NOT NULL,
+          currency VARCHAR(10) NOT NULL DEFAULT 'KRW',
+          exchange_rate DECIMAL(10,4) NOT NULL DEFAULT 1.0000,
+          amount DECIMAL(15,2) NOT NULL,
+          amount_krw DECIMAL(15,2) DEFAULT 0.00 COMMENT '원화 금액',
+          amount_usd DECIMAL(15,2) DEFAULT 0.00 COMMENT '달러 금액',
+          amount_cny DECIMAL(15,2) DEFAULT 0.00 COMMENT '위안 금액',
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          
+          INDEX idx_user_id (user_id),
+          INDEX idx_transaction_date (transaction_date),
+          INDEX idx_currency (currency),
+          INDEX idx_created_at (created_at),
+          INDEX idx_amount_krw (amount_krw),
+          INDEX idx_amount_usd (amount_usd),
+          INDEX idx_amount_cny (amount_cny)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        COMMENT='입금 내역 테이블 (모든 화폐 단위별 금액 포함)'
+      `);
+      
+      console.log('✅ finance_incoming 테이블 생성 완료 (확장된 구조)');
+      return { success: true, added: true, message: 'finance_incoming 테이블이 생성되었습니다.' };
+    } else {
+      // 기존 테이블에 새 필드 추가
+      console.log('🔄 기존 테이블에 화폐 단위별 금액 필드 추가 중...');
+      
+      // amount_krw 필드 추가
+      try {
+        await connection.execute(`
+          ALTER TABLE finance_incoming 
+          ADD COLUMN amount_krw DECIMAL(15,2) DEFAULT 0.00 COMMENT '원화 금액'
+        `);
+        console.log('✅ amount_krw 필드 추가 완료');
+      } catch (error) {
+        if (error.code === 'ER_DUP_FIELDNAME') {
+          console.log('ℹ️ amount_krw 필드가 이미 존재합니다.');
+        } else {
+          throw error;
+        }
+      }
+      
+      // amount_usd 필드 추가
+      try {
+        await connection.execute(`
+          ALTER TABLE finance_incoming 
+          ADD COLUMN amount_usd DECIMAL(15,2) DEFAULT 0.00 COMMENT '달러 금액'
+        `);
+        console.log('✅ amount_usd 필드 추가 완료');
+      } catch (error) {
+        if (error.code === 'ER_DUP_FIELDNAME') {
+          console.log('ℹ️ amount_usd 필드가 이미 존재합니다.');
+        } else {
+          throw error;
+        }
+      }
+      
+      // amount_cny 필드 추가
+      try {
+        await connection.execute(`
+          ALTER TABLE finance_incoming 
+          ADD COLUMN amount_cny DECIMAL(15,2) DEFAULT 0.00 COMMENT '위안 금액'
+        `);
+        console.log('✅ amount_cny 필드 추가 완료');
+      } catch (error) {
+        if (error.code === 'ER_DUP_FIELDNAME') {
+          console.log('ℹ️ amount_cny 필드가 이미 존재합니다.');
+        } else {
+          throw error;
+        }
+      }
+      
+      // 인덱스 추가
+      try {
+        await connection.execute('CREATE INDEX IF NOT EXISTS idx_amount_krw ON finance_incoming(amount_krw)');
+        await connection.execute('CREATE INDEX IF NOT EXISTS idx_amount_usd ON finance_incoming(amount_usd)');
+        await connection.execute('CREATE INDEX IF NOT EXISTS idx_amount_cny ON finance_incoming(amount_cny)');
+        console.log('✅ 화폐 단위별 금액 인덱스 추가 완료');
+      } catch (error) {
+        console.log('ℹ️ 인덱스 추가 중 오류 (무시됨):', error.message);
+      }
+      
+      // 기존 데이터에 대한 기본값 설정
+      try {
+        await connection.execute(`
+          UPDATE finance_incoming 
+          SET 
+            amount_krw = CASE 
+              WHEN currency = 'KRW' THEN amount 
+              WHEN currency = 'USD' THEN amount * exchange_rate 
+              WHEN currency = 'CNY' THEN amount * exchange_rate 
+              ELSE 0 
+            END,
+            amount_usd = CASE 
+              WHEN currency = 'KRW' THEN amount / 1350 
+              WHEN currency = 'USD' THEN amount 
+              WHEN currency = 'CNY' THEN amount * exchange_rate / 1350 
+              ELSE 0 
+            END,
+            amount_cny = CASE 
+              WHEN currency = 'KRW' THEN amount / 193 
+              WHEN currency = 'USD' THEN amount * exchange_rate / 193 
+              WHEN currency = 'CNY' THEN amount 
+              ELSE 0 
+            END
+        `);
+        console.log('✅ 기존 데이터 화폐 단위별 금액 설정 완료');
+      } catch (error) {
+        console.log('ℹ️ 기존 데이터 업데이트 중 오류 (무시됨):', error.message);
+      }
+      
+      console.log('✅ finance_incoming 테이블 업데이트 완료');
+      return { success: true, added: false, message: 'finance_incoming 테이블이 업데이트되었습니다.' };
+    }
+    
+  } catch (error) {
+    console.error('❌ finance_incoming 테이블 마이그레이션 오류:', error);
+    return { success: false, error: error.message };
+  } finally {
+    connection.release();
+  }
+}
+
+// finance_expense 테이블 마이그레이션 함수
+async function migrateFinanceExpenseTable() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔄 finance_expense 테이블 마이그레이션 시작...');
+    
+    // finance_expense 테이블 생성
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS finance_expense (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        transaction_date DATE NOT NULL,
+        category VARCHAR(100) NOT NULL COMMENT '지출 카테고리',
+        currency VARCHAR(10) NOT NULL DEFAULT 'KRW',
+        exchange_rate DECIMAL(10,4) NOT NULL DEFAULT 1.0000,
+        amount DECIMAL(15,2) NOT NULL,
+        amount_krw DECIMAL(15,2) DEFAULT 0.00 COMMENT '원화 금액',
+        amount_usd DECIMAL(15,2) DEFAULT 0.00 COMMENT '달러 금액',
+        amount_cny DECIMAL(15,2) DEFAULT 0.00 COMMENT '위안 금액',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        
+        INDEX idx_user_id (user_id),
+        INDEX idx_transaction_date (transaction_date),
+        INDEX idx_category (category),
+        INDEX idx_currency (currency),
+        INDEX idx_created_at (created_at),
+        INDEX idx_amount_krw (amount_krw),
+        INDEX idx_amount_usd (amount_usd),
+        INDEX idx_amount_cny (amount_cny)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    
+    console.log('✅ finance_expense 테이블 생성 완료');
+    
+    // amount_krw, amount_usd, amount_cny 컬럼이 없으면 추가
+    const [columns] = await connection.execute(`
+      SHOW COLUMNS FROM finance_expense 
+      WHERE Field IN ('amount_krw', 'amount_usd', 'amount_cny')
+    `);
+    
+    if (columns.length < 3) {
+      // amount_krw 컬럼 추가
+      try {
+        await connection.execute('ALTER TABLE finance_expense ADD COLUMN amount_krw DECIMAL(15,2) DEFAULT 0.00 COMMENT "원화 금액"');
+        console.log('✅ amount_krw 컬럼 추가 완료');
+      } catch (error) {
+        // 컬럼이 이미 존재하는 경우 무시
+      }
+      
+      // amount_usd 컬럼 추가
+      try {
+        await connection.execute('ALTER TABLE finance_expense ADD COLUMN amount_usd DECIMAL(15,2) DEFAULT 0.00 COMMENT "달러 금액"');
+        console.log('✅ amount_usd 컬럼 추가 완료');
+      } catch (error) {
+        // 컬럼이 이미 존재하는 경우 무시
+      }
+      
+      // amount_cny 컬럼 추가
+      try {
+        await connection.execute('ALTER TABLE finance_expense ADD COLUMN amount_cny DECIMAL(15,2) DEFAULT 0.00 COMMENT "위안 금액"');
+        console.log('✅ amount_cny 컬럼 추가 완료');
+      } catch (error) {
+        // 컬럼이 이미 존재하는 경우 무시
+      }
+      
+      // 기존 데이터에 대한 화폐별 금액 계산 및 업데이트
+      await connection.execute(`
+        UPDATE finance_expense
+        SET
+          amount_krw = CASE
+            WHEN currency = 'KRW' THEN amount
+            WHEN currency = 'USD' THEN amount * exchange_rate
+            WHEN currency = 'CNY' THEN amount * exchange_rate
+            ELSE 0
+          END,
+          amount_usd = CASE
+            WHEN currency = 'KRW' THEN amount / 1350
+            WHEN currency = 'USD' THEN amount
+            WHEN currency = 'CNY' THEN amount * exchange_rate / 1350
+            ELSE 0
+          END,
+          amount_cny = CASE
+            WHEN currency = 'KRW' THEN amount / 193
+            WHEN currency = 'USD' THEN amount * exchange_rate / 193
+            WHEN currency = 'CNY' THEN amount
+            ELSE 0
+          END
+      `);
+      console.log('✅ 기존 데이터 화폐별 금액 계산 완료');
+    }
+    
+    // 인덱스 추가
+    try {
+      await connection.execute('CREATE INDEX IF NOT EXISTS idx_amount_krw ON finance_expense(amount_krw)');
+      await connection.execute('CREATE INDEX IF NOT EXISTS idx_amount_usd ON finance_expense(amount_usd)');
+      await connection.execute('CREATE INDEX IF NOT EXISTS idx_amount_cny ON finance_expense(amount_cny)');
+      console.log('✅ 화폐별 금액 인덱스 추가 완료');
+    } catch (error) {
+      // 인덱스가 이미 존재하는 경우 무시
+    }
+    
+    await connection.execute('ALTER TABLE finance_expense COMMENT = "지출 내역 테이블 (모든 화폐 단위별 금액 포함)"');
+    
+    connection.release();
+    return { success: true, message: 'finance_expense 테이블 마이그레이션이 완료되었습니다.' };
+  } catch (error) {
+    console.error('❌ finance_expense 테이블 마이그레이션 오류:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// logistic_payment 테이블 마이그레이션 함수
+async function migrateLogisticPaymentTable() {
+  const connection = await pool.getConnection();
+  
+  try {
+    console.log('🔧 [Database] logistic_payment 테이블 마이그레이션 시작...');
+    
+    // 테이블이 존재하는지 확인
+    const [tables] = await connection.execute(`
+      SELECT TABLE_NAME 
+      FROM information_schema.TABLES 
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'logistic_payment'
+    `, [process.env.DB_NAME || 'labsemble']);
+    
+    if (tables.length === 0) {
+      // 테이블이 존재하지 않으면 새로 생성
+      console.log('📝 [Database] logistic_payment 테이블 생성 중...');
+      
+      await connection.execute(`
+        CREATE TABLE logistic_payment (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          mj_packing_list_id INT NOT NULL,
+          pl_date DATE NOT NULL,
+          packing_code VARCHAR(255) NOT NULL,
+          logistic_company VARCHAR(255),
+          box_no INT NOT NULL DEFAULT 1 COMMENT '박스 번호 (1부터 시작)',
+          tracking_number VARCHAR(255),
+          logistic_fee DECIMAL(10,2) DEFAULT 0.00,
+          is_paid BOOLEAN DEFAULT FALSE,
+          description TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (mj_packing_list_id) REFERENCES mj_packing_list(id) ON DELETE CASCADE,
+          INDEX idx_packing_code (packing_code),
+          INDEX idx_logistic_company (logistic_company),
+          INDEX idx_box_no (box_no),
+          INDEX idx_pl_date (pl_date),
+          INDEX idx_packing_code_list_id (packing_code, mj_packing_list_id),
+          INDEX idx_company_packing_code (logistic_company, packing_code),
+          INDEX idx_packing_code_box_no (packing_code, box_no),
+          INDEX idx_list_id_box_no (mj_packing_list_id, box_no)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      
+      console.log('✅ [Database] logistic_payment 테이블 생성 완료');
+    } else {
+      // 테이블이 존재하면 필요한 컬럼과 인덱스 추가
+      console.log('🔍 [Database] logistic_payment 테이블 구조 확인 중...');
+      
+      const [columns] = await connection.execute('DESCRIBE logistic_payment');
+      const columnNames = columns.map(col => col.Field);
+      
+      // 필요한 컬럼들 확인 및 추가
+      const requiredColumns = [
+        { name: 'packing_code', sql: 'ADD COLUMN packing_code VARCHAR(255) NOT NULL' },
+        { name: 'logistic_company', sql: 'ADD COLUMN logistic_company VARCHAR(255)' },
+        { name: 'box_no', sql: 'ADD COLUMN box_no INT NOT NULL DEFAULT 1 COMMENT \'박스 번호 (1부터 시작)\'' },
+        { name: 'tracking_number', sql: 'ADD COLUMN tracking_number VARCHAR(255)' },
+        { name: 'logistic_fee', sql: 'ADD COLUMN logistic_fee DECIMAL(10,2) DEFAULT 0.00' },
+        { name: 'is_paid', sql: 'ADD COLUMN is_paid BOOLEAN DEFAULT FALSE' },
+        { name: 'description', sql: 'ADD COLUMN description TEXT' },
+        { name: 'pl_date', sql: 'ADD COLUMN pl_date DATE AFTER mj_packing_list_id' }
+      ];
+      
+      for (const column of requiredColumns) {
+        if (!columnNames.includes(column.name)) {
+          console.log(`📝 [Database] ${column.name} 컬럼 추가 중...`);
+          await connection.execute(`ALTER TABLE logistic_payment ${column.sql}`);
+          console.log(`✅ [Database] ${column.name} 컬럼 추가 완료`);
+        }
+      }
+      
+      // box_no가 추가된 경우 기존 데이터 업데이트
+      if (columnNames.includes('box_no')) {
+        console.log('🔧 [Database] 기존 데이터의 box_no를 1로 설정 중...');
+        await connection.execute('UPDATE logistic_payment SET box_no = 1 WHERE box_no IS NULL');
+        console.log('✅ [Database] 기존 데이터 box_no 설정 완료');
+      }
+      
+      // pl_date가 추가된 경우 기존 데이터 업데이트
+      if (columnNames.includes('pl_date')) {
+        console.log('🔧 [Database] 기존 데이터의 pl_date를 mj_packing_list에서 가져와서 업데이트 중...');
+        await connection.execute(`
+          UPDATE logistic_payment lp
+          JOIN mj_packing_list mpl ON lp.mj_packing_list_id = mpl.id
+          SET lp.pl_date = mpl.pl_date
+          WHERE lp.pl_date IS NULL
+        `);
+        console.log('✅ [Database] 기존 데이터 pl_date 업데이트 완료');
+      }
+      
+      // 필요한 인덱스들 확인 및 추가
+      const [indexes] = await connection.execute('SHOW INDEX FROM logistic_payment');
+      const indexNames = [...new Set(indexes.map(idx => idx.Key_name))];
+      
+      const requiredIndexes = [
+        { name: 'idx_packing_code', sql: 'CREATE INDEX idx_packing_code ON logistic_payment(packing_code)' },
+        { name: 'idx_logistic_company', sql: 'CREATE INDEX idx_logistic_company ON logistic_payment(logistic_company)' },
+        { name: 'idx_box_no', sql: 'CREATE INDEX idx_box_no ON logistic_payment(box_no)' },
+        { name: 'idx_packing_code_list_id', sql: 'CREATE INDEX idx_packing_code_list_id ON logistic_payment(packing_code, mj_packing_list_id)' },
+        { name: 'idx_company_packing_code', sql: 'CREATE INDEX idx_company_packing_code ON logistic_payment(logistic_company, packing_code)' },
+        { name: 'idx_packing_code_box_no', sql: 'CREATE INDEX idx_packing_code_box_no ON logistic_payment(packing_code, box_no)' },
+        { name: 'idx_list_id_box_no', sql: 'CREATE INDEX idx_list_id_box_no ON logistic_payment(mj_packing_list_id, box_no)' },
+        { name: 'idx_pl_date', sql: 'CREATE INDEX idx_pl_date ON logistic_payment(pl_date)' }
+      ];
+      
+      for (const index of requiredIndexes) {
+        if (!indexNames.includes(index.name)) {
+          try {
+            console.log(`📝 [Database] ${index.name} 인덱스 추가 중...`);
+            await connection.execute(index.sql);
+            console.log(`✅ [Database] ${index.name} 인덱스 추가 완료`);
+          } catch (error) {
+            if (error.code === 'ER_DUP_KEYNAME') {
+              console.log(`⚠️ [Database] ${index.name} 인덱스가 이미 존재함`);
+            } else {
+              console.error(`❌ [Database] ${index.name} 인덱스 추가 실패:`, error.message);
+            }
+          }
+        }
+      }
+      
+      console.log('✅ [Database] logistic_payment 테이블 구조 업데이트 완료');
+    }
+    
+    // 테이블 구조 최종 확인
+    const [finalColumns] = await connection.execute('DESCRIBE logistic_payment');
+    console.log('📊 [Database] logistic_payment 테이블 최종 구조:');
+    finalColumns.forEach(col => {
+      console.log(`   ${col.Field} | ${col.Type} | ${col.Null} | ${col.Key} | ${col.Default} | ${col.Extra}`);
+    });
+    
+    console.log('🎉 [Database] logistic_payment 테이블 마이그레이션 완료');
+    
+    return {
+      success: true,
+      message: 'logistic_payment 테이블 마이그레이션이 완료되었습니다.'
+    };
+    
+  } catch (error) {
+    console.error('❌ [Database] logistic_payment 테이블 마이그레이션 실패:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  } finally {
+    connection.release();
+  }
+}
+
 // 데이터베이스 연결 테스트 및 마이그레이션 실행
 async function initializeDatabase() {
   try {
@@ -755,6 +1210,33 @@ async function initializeDatabase() {
       console.error('❌ mj_packingList 테이블 마이그레이션 실패:', packingListMigrationResult.error);
     }
     
+    // logistic_payment 테이블 마이그레이션 실행
+    console.log('🔄 logistic_payment 테이블 마이그레이션 시작...');
+    const logisticPaymentMigrationResult = await migrateLogisticPaymentTable();
+    if (logisticPaymentMigrationResult.success) {
+      console.log('✅ logistic_payment 테이블 마이그레이션 완료:', logisticPaymentMigrationResult.message);
+    } else {
+      console.error('❌ logistic_payment 테이블 마이그레이션 실패:', logisticPaymentMigrationResult.error);
+    }
+    
+    // finance_incoming 테이블 마이그레이션 실행
+    console.log('🔄 finance_incoming 테이블 마이그레이션 시작...');
+    const financeMigrationResult = await migrateFinanceIncomingTable();
+    if (financeMigrationResult.success) {
+      console.log('✅ finance_incoming 테이블 마이그레이션 완료:', financeMigrationResult.message);
+    } else {
+      console.error('❌ finance_incoming 테이블 마이그레이션 실패:', financeMigrationResult.error);
+    }
+    
+    // finance_expense 테이블 마이그레이션 실행
+    console.log('🔄 finance_expense 테이블 마이그레이션 시작...');
+    const expenseMigrationResult = await migrateFinanceExpenseTable();
+    if (expenseMigrationResult.success) {
+      console.log('✅ finance_expense 테이블 마이그레이션 완료:', expenseMigrationResult.message);
+    } else {
+      console.error('❌ finance_expense 테이블 마이그레이션 실패:', expenseMigrationResult.error);
+    }
+    
     console.log('🎉 모든 마이그레이션이 완료되었습니다!');
     
   } catch (error) {
@@ -798,7 +1280,13 @@ module.exports = {
   pool,
   testConnection,
   initializeDatabase,
+  migrateFactoryShippingStatus,
+  migrateWarehouseTables,
+  migratePaymentColumns,
   migrateWarehouseStockFields,
   migrateMJProjectQuantityFields,
-  migrateMJPackingListTable
+  migrateMJPackingListTable,
+  migrateFinanceIncomingTable,
+  migrateFinanceExpenseTable,
+  migrateLogisticPaymentTable
 }; 

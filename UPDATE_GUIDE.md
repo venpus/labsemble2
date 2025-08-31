@@ -228,7 +228,7 @@ pm2 env labsemble-server
 ---
 
 ## 🛠️ **3단계: 수동 업데이트 (스크립트 사용 불가 시)**
-
+sudo -u labsemble
 ### **3.1 코드 업데이트**
 ```bash
 # 애플리케이션 디렉토리로 이동
@@ -255,12 +255,12 @@ git pull origin develop
 ```bash
 # 클라이언트 의존성 업데이트
 cd client
-npm ci --production
+npm install
 cd ..
 
 # 서버 의존성 업데이트
 cd server
-npm ci --production
+npm install
 cd ..
 
 # 또는 개발 의존성 포함 설치

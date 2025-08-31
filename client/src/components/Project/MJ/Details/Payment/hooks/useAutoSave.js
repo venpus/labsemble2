@@ -12,6 +12,7 @@ export const useAutoSave = (project, paymentData, updatePaymentData) => {
     editableShippingCost,
     editableSubtotal,
     editableFee,
+    balanceAmount,
     totalAmount,
     additionalCostItems
   } = paymentData;
@@ -66,6 +67,10 @@ export const useAutoSave = (project, paymentData, updatePaymentData) => {
         return; // 토큰이 없으면 조용히 리턴 (사용자에게 에러 표시하지 않음)
       }
 
+      // 새로운 balanceAmount 계산
+      const totalAdditionalCosts = additionalCostItems.reduce((sum, item) => sum + item.cost, 0);
+      const newBalanceAmount = editableFee + newShippingCost + totalAdditionalCosts;
+
       const paymentDataToSave = {
         unitPrice: paymentData.editableUnitPrice,
         selectedFeeRate: selectedFeeRate,
@@ -107,6 +112,10 @@ export const useAutoSave = (project, paymentData, updatePaymentData) => {
       if (!token) {
         return; // 토큰이 없으면 조용히 리턴 (사용자에게 에러 표시하지 않음)
       }
+
+      // 새로운 balanceAmount 계산
+      const totalAdditionalCosts = additionalCostItems.reduce((sum, item) => sum + item.cost, 0);
+      const newBalanceAmount = newFee + editableShippingCost + totalAdditionalCosts;
 
       const paymentDataToSave = {
         unitPrice: paymentData.editableUnitPrice,
