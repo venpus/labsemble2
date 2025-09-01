@@ -168,7 +168,24 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
                               project: project.project_name,
                               projectData: project
                             });
-                            // 이미지 로드 실패 시 기본 아이콘 표시
+                            
+                            // 1차: 정적 파일 URL로 재시도 (프록시 URL인 경우)
+                            if (project.first_image.url.includes('/api/warehouse/image/')) {
+                              const staticUrl = project.first_image.url.replace('/api/warehouse/image/', '/images/');
+                              console.log('🔄 [ProjectSearchModal] 정적 파일 URL로 재시도:', staticUrl);
+                              e.target.src = staticUrl;
+                              return;
+                            }
+                            
+                            // 2차: 상대 경로로 재시도 (절대 URL인 경우)
+                            if (project.first_image.url.startsWith('http')) {
+                              const relativeUrl = `/images/${project.first_image.stored_filename}`;
+                              console.log('🔄 [ProjectSearchModal] 상대 경로로 재시도:', relativeUrl);
+                              e.target.src = relativeUrl;
+                              return;
+                            }
+                            
+                            // 2차: 기본 아이콘 표시
                             e.target.style.display = 'none';
                             e.target.nextSibling.style.display = 'flex';
                           }}

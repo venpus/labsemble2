@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Labsemble API 문서</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 300;
+        }
+        .header p {
+            margin: 0.5rem 0 0 0;
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        .swagger-ui {
+            margin-top: 0;
+        }
+        .info {
+            background: #f8f9fa;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .info h3 {
+            margin: 0 0 1rem 0;
+            color: #495057;
+        }
+        .info ul {
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+        .info li {
+            margin-bottom: 0.5rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Labsemble API 문서</h1>
+        <p>제조업 관리 시스템 REST API</p>
+    </div>
+    
+    <div class="info">
+        <h3>📋 API 개요</h3>
+        <ul>
+            <li><strong>Base URL:</strong> <code>http://localhost:5000/api</code></li>
+            <li><strong>시간대:</strong> GMT+9 (한국 시간)</li>
+            <li><strong>인증:</strong> JWT Bearer Token</li>
+            <li><strong>응답 형식:</strong> JSON</li>
+        </ul>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: './swagger.json',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                validatorUrl: null,
+                docExpansion: "list",
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true,
+                tryItOutEnabled: true,
+                requestInterceptor: function(request) {
+                    // JWT 토큰이 있으면 자동으로 추가
+                    const token = localStorage.getItem('jwt_token');
+                    if (token) {
+                        request.headers['Authorization'] = 'Bearer ' + token;
+                    }
+                    return request;
+                },
+                responseInterceptor: function(response) {
+                    // 로그인 응답에서 토큰 저장
+                    if (response.url && response.url.includes('/auth/login') && response.status === 200) {
+                        try {
+                            const data = JSON.parse(response.body);
+                            if (data.token) {
+                                localStorage.setItem('jwt_token', data.token);
+                            }
+                        } catch (e) {
+                            console.log('토큰 저장 실패:', e);
+                        }
+                    }
+                    return response;
+                }
+            });
+        };
+    </script>
+</body>
+</html> 

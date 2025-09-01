@@ -41,6 +41,29 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static('uploads'));
 
+// 이미지 전용 정적 파일 제공 (프로젝트 등록 이미지)
+app.use('/images', express.static('uploads/project/mj/registImage', {
+  setHeaders: (res, filePath) => {
+    // CORS 헤더
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    
+    // 캐시 설정
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    
+    // 보안 헤더
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    
+    // MIME 타입 설정
+    const path = require('path');
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.png') res.setHeader('Content-Type', 'image/png');
+    else if (ext === '.jpg' || ext === '.jpeg') res.setHeader('Content-Type', 'image/jpeg');
+    else if (ext === '.gif') res.setHeader('Content-Type', 'image/gif');
+    else if (ext === '.webp') res.setHeader('Content-Type', 'image/webp');
+  }
+}));
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

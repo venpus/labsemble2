@@ -11,6 +11,8 @@ client/build/
 client/dist/
 server/dist/
 
+# MJ_APP for Mobile
+MJ_APP/
 
 # Logs
 logs

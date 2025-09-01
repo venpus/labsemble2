@@ -6,6 +6,7 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const authMiddleware = require('../middleware/auth');
 const { devLog, errorLog } = require('../utils/logger');
+const config = require('../config/config');
 
 // 입고기록 CRUD API
 // 입고기록 생성
@@ -730,16 +731,16 @@ router.get('/products-with-remain-quantity', authMiddleware, async (req, res) =>
         remain_quantity: product.remain_quantity,
         created_at: product.created_at,
         updated_at: product.updated_at,
-        // 첫 번째 이미지 정보 추가 (프록시 엔드포인트 사용)
+        // 첫 번째 이미지 정보 추가 (환경별 URL 생성)
         first_image: firstImage ? {
           id: firstImage.id,
           original_filename: firstImage.original_name,
           stored_filename: firstImage.file_name, // file_name 사용
           file_path: firstImage.file_path, // file_path 저장
           created_at: firstImage.created_at,
-          // 프록시 엔드포인트를 통해 이미지 제공 (CORS 문제 해결)
-          url: `/api/warehouse/image/${firstImage.file_name}`,
-          thumbnail_url: `/api/warehouse/image/${firstImage.file_name}`
+          // 환경별 이미지 URL 생성
+          url: `${config.imageBaseUrl}/${firstImage.file_name}`,
+          thumbnail_url: `${config.imageBaseUrl}/${firstImage.file_name}`
         } : null
       };
 

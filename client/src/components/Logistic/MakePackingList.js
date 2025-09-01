@@ -1228,7 +1228,24 @@ const MakePackingList = () => {
                                   filePath: product.firstImage.file_path,
                                   error: '이미지 로드 실패'
                                 });
-                                // 이미지 로드 실패 시 기본 아이콘 표시
+                                
+                                // 1차: 정적 파일 URL로 재시도 (프록시 URL인 경우)
+                                if (product.firstImage.url.includes('/api/warehouse/image/')) {
+                                  const staticUrl = product.firstImage.url.replace('/api/warehouse/image/', '/images/');
+                                  console.log('🔄 [MakePackingList] 정적 파일 URL로 재시도:', staticUrl);
+                                  e.target.src = staticUrl;
+                                  return;
+                                }
+                                
+                                // 2차: 상대 경로로 재시도 (절대 URL인 경우)
+                                if (product.firstImage.url.startsWith('http')) {
+                                  const relativeUrl = `/images/${product.firstImage.stored_filename}`;
+                                  console.log('🔄 [MakePackingList] 상대 경로로 재시도:', relativeUrl);
+                                  e.target.src = relativeUrl;
+                                  return;
+                                }
+                                
+                                // 2차: 기본 아이콘 표시
                                 e.target.style.display = 'none';
                                 e.target.nextSibling.style.display = 'flex';
                               }}
