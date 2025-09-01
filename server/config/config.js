@@ -110,7 +110,21 @@ function getAbsoluteUploadPath() {
   }
   
   // 개발환경이거나 ecosystem cwd가 없는 경우
-  const uploadPath = path.join(cwd, 'uploads/project/mj/registImage');
+  // 로컬 환경에서는 server 폴더 내의 uploads 사용
+  let uploadPath;
+  if (cwd.endsWith('server')) {
+    // 이미 server 폴더에 있는 경우
+    uploadPath = path.join(cwd, 'uploads/project/mj/registImage');
+  } else if (cwd.includes('server')) {
+    // server 폴더가 경로에 포함된 경우
+    const serverIndex = cwd.indexOf('server');
+    const serverPath = cwd.substring(0, serverIndex + 6); // 'server' 길이
+    uploadPath = path.join(serverPath, 'uploads/project/mj/registImage');
+  } else {
+    // server 폴더를 찾을 수 없는 경우, 현재 cwd 사용
+    uploadPath = path.join(cwd, 'server/uploads/project/mj/registImage');
+  }
+  
   console.log('🏠 [Config] 개발환경 또는 fallback 업로드 경로:', uploadPath);
   return uploadPath;
 }

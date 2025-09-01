@@ -67,7 +67,7 @@ const ProdInfo = ({ project }) => {
           mimeType: fileInfo.mime_type,
           type: fileInfo.mime_type.startsWith('image/') ? 'image' : 'video',
           preview: fileInfo.mime_type.startsWith('image/') 
-            ? `/uploads/project/mj/realImage/${fileInfo.file_path.split('/').pop()}`
+            ? `/images/${fileInfo.file_path.split('/').pop()}`
             : null
         }));
 
@@ -84,14 +84,30 @@ const ProdInfo = ({ project }) => {
   // project prop 변경 시 제품 정보 상태 업데이트
   useEffect(() => {
     if (project) {
-      console.log('🔍 Project 데이터 업데이트:', {
+      console.log('🔍 [ProdInfo] Project 데이터 업데이트:', {
+        id: project.id,
+        project_name: project.project_name,
         unit_weight: project.unit_weight,
         packaging_method: project.packaging_method,
         box_dimensions: project.box_dimensions,
         box_weight: project.box_weight,
         supplier_name: project.supplier_name,
-        factory_delivery_days: project.factory_delivery_days
+        factory_delivery_days: project.factory_delivery_days,
+        first_image: project.first_image
       });
+      
+      // 프로젝트 등록 이미지 정보 로깅
+      if (project.first_image) {
+        console.log('🖼️ [ProdInfo] 프로젝트 등록 이미지 정보:', {
+          id: project.first_image.id,
+          original_filename: project.first_image.original_filename,
+          stored_filename: project.first_image.stored_filename,
+          url: project.first_image.url,
+          thumbnail_url: project.first_image.thumbnail_url
+        });
+      } else {
+        console.log('⚠️ [ProdInfo] 프로젝트 등록 이미지 없음');
+      }
       
       setEditableUnitWeight(project.unit_weight || '');
       setEditablePackagingMethod(project.packaging_method || '');
@@ -100,8 +116,8 @@ const ProdInfo = ({ project }) => {
       setEditableSupplierName(project.supplier_name || '');
       setEditableFactoryDeliveryDays(project.factory_delivery_days || '');
       
-      console.log('✅ 공급자 이름 상태 설정:', project.supplier_name || '');
-      console.log('✅ 공장납기소요일 상태 설정:', project.factory_delivery_days || '');
+      console.log('✅ [ProdInfo] 공급자 이름 상태 설정:', project.supplier_name || '');
+      console.log('✅ [ProdInfo] 공장납기소요일 상태 설정:', project.factory_delivery_days || '');
     }
   }, [project]);
 
@@ -188,7 +204,7 @@ const ProdInfo = ({ project }) => {
         mimeType: fileInfo.mime_type,
         type: fileInfo.mime_type.startsWith('image/') ? 'image' : 'video',
         preview: fileInfo.mime_type.startsWith('image/') 
-          ? `/uploads/project/mj/realImage/${fileInfo.file_path.split('/').pop()}`
+          ? `/images/${fileInfo.file_path.split('/').pop()}`
           : null
       }));
 
@@ -258,7 +274,48 @@ const ProdInfo = ({ project }) => {
         제품정보
       </h2>
       
-      {/* 제품정보 테이블 */}
+      {/* 프로젝트 등록 이미지 섹션 */}
+      {project.first_image && (
+        <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6">
+          <h3 className="text-lg font-medium text-gray-900 flex items-center mb-4">
+            <ImageIcon className="w-5 h-5 mr-2 text-blue-600" />
+            프로젝트 등록 이미지
+          </h3>
+          <div className="flex items-center space-x-4">
+            <div className="relative">
+              <img
+                src={project.first_image.url}
+                alt={project.first_image.original_filename}
+                className="w-32 h-32 object-cover rounded-lg border border-gray-200"
+                onError={(e) => {
+                  console.log('❌ [ProdInfo] 프로젝트 등록 이미지 로드 실패:', project.first_image.url);
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <div 
+                className="w-32 h-32 bg-gray-100 rounded-lg border border-gray-200 hidden items-center justify-center"
+                style={{ display: 'none' }}
+              >
+                <ImageIcon className="w-8 h-8 text-gray-400" />
+              </div>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-gray-600 mb-2">
+                <span className="font-medium">파일명:</span> {project.first_image.original_filename}
+              </p>
+              <p className="text-sm text-gray-600 mb-2">
+                <span className="font-medium">저장명:</span> {project.first_image.stored_filename}
+              </p>
+              <p className="text-sm text-gray-600">
+                <span className="font-medium">업로드일:</span> {new Date(project.first_image.created_at).toLocaleDateString()}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 제품 정보 테이블 */}
       <div className="overflow-x-auto mb-6">
         {!isAdmin && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">

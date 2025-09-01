@@ -81,6 +81,11 @@ app.use('/images', express.static(config.uploadPath, {
     else if (ext === '.jpg' || ext === '.jpeg') res.setHeader('Content-Type', 'image/jpeg');
     else if (ext === '.gif') res.setHeader('Content-Type', 'image/gif');
     else if (ext === '.webp') res.setHeader('Content-Type', 'image/webp');
+    
+    // 디버그: 각 이미지 요청 로깅 (개발환경에서만)
+    if (config.isDevelopment) {
+      console.log(`🖼️ [Static] 이미지 요청: ${filePath} -> ${res.getHeader('Content-Type')}`);
+    }
   }
 }));
 
@@ -89,6 +94,75 @@ console.log('📁 [Server] 정적 파일 미들웨어 설정:');
 console.log('  - /images 경로:', config.uploadPath);
 console.log('  - 절대 경로:', require('path').resolve(config.uploadPath));
 console.log('  - 폴더 존재:', require('fs').existsSync(config.uploadPath));
+
+// 폴더 내용 확인
+try {
+  const fs = require('fs');
+  const files = fs.readdirSync(config.uploadPath);
+  console.log('  - 폴더 내 파일 개수:', files.length);
+  if (files.length > 0) {
+    console.log('  - 첫 번째 파일:', files[0]);
+    console.log('  - 마지막 파일:', files[files.length - 1]);
+    
+    // 첫 번째 파일의 전체 경로 확인
+    const firstFilePath = require('path').join(config.uploadPath, files[0]);
+    console.log('  - 첫 번째 파일 전체 경로:', firstFilePath);
+    console.log('  - 첫 번째 파일 존재:', fs.existsSync(firstFilePath));
+    
+    if (fs.existsSync(firstFilePath)) {
+      const stats = fs.statSync(firstFilePath);
+      console.log('  - 첫 번째 파일 크기:', stats.size, 'bytes');
+      console.log('  - 첫 번째 파일 권한:', stats.mode.toString(8));
+    }
+  }
+} catch (error) {
+  console.log('  - 폴더 읽기 오류:', error.message);
+}
+
+// 이미지 접근 테스트 엔드포인트 추가
+app.get('/api/test/image-access/:filename', (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const filename = req.params.filename;
+    const imagePath = path.join(config.uploadPath, filename);
+    
+    console.log(`🧪 [Test] 이미지 접근 테스트: ${filename}`);
+    console.log(`  - 요청 파일명: ${filename}`);
+    console.log(`  - 전체 경로: ${imagePath}`);
+    console.log(`  - 파일 존재: ${fs.existsSync(imagePath)}`);
+    
+    if (fs.existsSync(imagePath)) {
+      const stats = fs.statSync(imagePath);
+      console.log(`  - 파일 크기: ${stats.size} bytes`);
+      console.log(`  - 파일 권한: ${stats.mode.toString(8)}`);
+      
+      res.json({
+        success: true,
+        filename,
+        fullPath: imagePath,
+        exists: true,
+        size: stats.size,
+        permissions: stats.mode.toString(8),
+        config: {
+          uploadPath: config.uploadPath,
+          imageBaseUrl: config.imageBaseUrl
+        }
+      });
+    } else {
+      res.json({
+        success: false,
+        filename,
+        fullPath: imagePath,
+        exists: false,
+        error: 'File not found'
+      });
+    }
+  } catch (error) {
+    console.error('❌ [Test] 이미지 접근 테스트 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Rate limiting
 const limiter = rateLimit({

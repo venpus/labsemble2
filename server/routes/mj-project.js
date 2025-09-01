@@ -164,12 +164,28 @@ router.post('/register', authMiddleware, upload.array('images', 10), async (req,
     
     // 3. 이미지 저장
     if (req.files && req.files.length > 0) {
+      console.log(`🖼️ [MJ-Project] 이미지 업로드 시작: ${req.files.length}개 파일`);
+      
       for (const file of req.files) {
+        console.log(`🖼️ [MJ-Project] 이미지 파일 정보:`, {
+          originalname: file.originalname,
+          filename: file.filename,
+          mimetype: file.mimetype,
+          size: file.size
+        });
+        
+        // 기존 컬럼명 사용 (file_name, original_name)
         await connection.execute(
           'INSERT INTO mj_project_images (project_id, file_name, file_path, original_name) VALUES (?, ?, ?, ?)',
           [projectId, file.filename, file.filename, file.originalname]
         );
+        
+        console.log(`✅ [MJ-Project] 이미지 메타데이터 저장 완료: ${file.filename}`);
       }
+      
+      console.log(`🎉 [MJ-Project] 모든 이미지 저장 완료: ${req.files.length}개`);
+    } else {
+      console.log('⚠️ [MJ-Project] 업로드된 이미지 없음');
     }
     
     await connection.commit();
@@ -216,7 +232,6 @@ router.get('/', authMiddleware, async (req, res) => {
         u.company_name,
         c.username as created_by_username,
         c.company_name as created_by_company,
-        (SELECT file_path FROM mj_project_images WHERE project_id = p.id ORDER BY id ASC LIMIT 1) as representative_image,
         (SELECT COALESCE(SUM(quantity), 0) FROM warehouse_entries WHERE project_id = p.id) as warehouse_quantity
       FROM mj_project p
       JOIN users u ON p.user_id = u.id
@@ -236,14 +251,71 @@ router.get('/', authMiddleware, async (req, res) => {
     
     const [projects] = await pool.execute(sql, params);
     
-
+    // 각 프로젝트에 이미지 정보 추가
+    const projectsWithImages = await Promise.all(projects.map(async (project) => {
+      console.log(`🔍 [MJ-Project] 프로젝트 ${project.id} 이미지 조회 시작: ${project.project_name}`);
+      
+      // 첫 번째 이미지 조회 (기존 컬럼명 사용)
+      const [images] = await pool.execute(`
+        SELECT id, original_name, file_name, file_path, created_at
+        FROM mj_project_images 
+        WHERE project_id = ? 
+        ORDER BY created_at ASC 
+        LIMIT 1
+      `, [project.id]);
+      
+      console.log(`🔍 [MJ-Project] 프로젝트 ${project.id} 이미지 조회 결과:`, {
+        projectId: project.id,
+        projectName: project.project_name,
+        imageCount: images.length,
+        images: images
+      });
+      
+      // 이미지 정보 추가
+      const first_image = images.length > 0 ? {
+        id: images[0].id,
+        original_filename: images[0].original_name,
+        stored_filename: images[0].file_name,
+        file_path: images[0].file_path,
+        created_at: images[0].created_at,
+        url: `${config.imageBaseUrl}/${images[0].file_name}`,
+        thumbnail_url: `${config.imageBaseUrl}/${images[0].file_name}`
+      } : null;
+      
+      console.log(`🔍 [MJ-Project] 프로젝트 ${project.id} 최종 이미지 정보:`, {
+        projectId: project.id,
+        projectName: project.project_name,
+        hasImage: !!first_image,
+        imageUrl: first_image?.url || 'null',
+        storedFilename: first_image?.stored_filename || 'null'
+      });
+      
+      return {
+        ...project,
+        first_image
+      };
+    }));
     
-    res.json({ success: true, projects });
+    console.log(`📋 [MJ-Project] 프로젝트 목록 조회 완료: ${projectsWithImages.length}개`);
+    
+    // 이미지가 있는 프로젝트와 없는 프로젝트 개수 확인
+    const projectsWithImagesCount = projectsWithImages.filter(p => p.first_image).length;
+    const projectsWithoutImagesCount = projectsWithImages.filter(p => !p.first_image).length;
+    const projectsWithoutImagesList = projectsWithImages.filter(p => !p.first_image);
+    
+    console.log(`🖼️ [MJ-Project] 이미지 상태 요약:`, {
+      totalProjects: projectsWithImages.length,
+      withImages: projectsWithImagesCount,
+      withoutImages: projectsWithoutImagesCount,
+      withoutImagesProjects: projectsWithoutImagesList.map(p => ({ id: p.id, name: p.project_name }))
+    });
+    
+    res.json({ success: true, projects: projectsWithImages });
   } catch (error) {
     console.error('MJ 프로젝트 목록 조회 오류:', error);
     res.status(500).json({ success: false, error: '프로젝트 목록 조회 중 오류가 발생했습니다.' });
   }
- });
+});
 
 // MJ 프로젝트 상세 조회
 router.get('/:id', async (req, res) => {
@@ -1392,8 +1464,8 @@ router.get('/calendar/logistics-events', authMiddleware, async (req, res) => {
           const fileName = project.representative_image.split('/').pop();
           
           imageData = {
-            url: `/api/warehouse/image/${fileName}`,
-            thumbnail_url: `/api/warehouse/image/${fileName}`,
+            url: `${config.imageBaseUrl}/${fileName}`,
+            thumbnail_url: `${config.imageBaseUrl}/${fileName}`,
             stored_filename: fileName,
             file_path: project.representative_image
           };

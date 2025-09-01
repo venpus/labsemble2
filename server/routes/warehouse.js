@@ -745,135 +745,132 @@ router.get('/debug/images', async (req, res) => {
   }
 });
 
-// mj_project에서 remain_quantity > 0인 프로젝트 목록 조회 (패킹리스트용)
+// remain_quantity > 0인 프로젝트 목록 조회 (이미지 포함)
 router.get('/products-with-remain-quantity', authMiddleware, async (req, res) => {
   const connection = await pool.getConnection();
   
   try {
-    devLog('🔄 [warehouse] remain_quantity > 0인 프로젝트 목록 조회 시작');
+    console.log('🔍 [Warehouse] remain_quantity > 0인 프로젝트 목록 조회 시작');
     
-    // mj_project에서 remain_quantity > 0인 프로젝트들을 조회
-    const [products] = await connection.execute(`
+    // 프로젝트별 입고/출고 수량 집계
+    const [projects] = await connection.execute(`
       SELECT 
-        mp.id as project_id,
-        mp.project_name,
-        mp.description as product_description,
-        mp.quantity as project_quantity,
-        mp.target_price,
-        mp.status as project_status,
-        mp.entry_quantity,
-        mp.export_quantity,
-        mp.remain_quantity,
-        mp.created_at,
-        mp.updated_at
-      FROM mj_project mp
-      WHERE mp.remain_quantity > 0
-      ORDER BY mp.project_name ASC, mp.description ASC
+        p.id as project_id,
+        p.project_name,
+        p.description as product_name,
+        p.description,
+        p.quantity as project_quantity,
+        p.target_price,
+        p.status as project_status,
+        COALESCE(SUM(we.quantity), 0) as entry_quantity,
+        COALESCE(SUM(pl.export_quantity), 0) as export_quantity,
+        (COALESCE(SUM(we.quantity), 0) - COALESCE(SUM(pl.export_quantity), 0)) as remain_quantity,
+        p.created_at,
+        p.updated_at
+      FROM mj_project p
+      LEFT JOIN warehouse_entries we ON p.id = we.project_id
+      LEFT JOIN mj_packing_list pl ON p.id = pl.project_id
+      GROUP BY p.id, p.project_name, p.description, p.quantity, p.target_price, p.status, p.created_at, p.updated_at
+      HAVING remain_quantity > 0
+      ORDER BY p.created_at DESC
     `);
 
-    // 각 프로젝트에 연결된 첫 번째 이미지 정보도 함께 조회
-    const responseData = await Promise.all(products.map(async (product) => {
-      // 해당 프로젝트의 첫 번째 이미지 조회 (mj_project_images 테이블 사용)
+    console.log(`🔍 [Warehouse] 프로젝트 조회 완료: ${projects.length}개`);
+
+    // 각 프로젝트에 이미지 정보 추가
+    const productsWithImages = await Promise.all(projects.map(async (project) => {
+      console.log(`🔍 [Warehouse] 프로젝트 ${project.project_id} 이미지 조회 시작`);
+      
+      // 첫 번째 이미지 조회
       const [images] = await connection.execute(`
-        SELECT id, file_name, file_path, original_name, created_at
+        SELECT id, original_name, file_name, file_path, created_at
         FROM mj_project_images 
-        WHERE project_id = ?
-        ORDER BY created_at ASC
+        WHERE project_id = ? 
+        ORDER BY created_at ASC 
         LIMIT 1
-      `, [product.project_id]);
+      `, [project.project_id]);
 
-      // firstImage 변수 정의
-      const firstImage = images.length > 0 ? images[0] : null;
+      console.log(`🔍 [Warehouse] 프로젝트 ${project.project_id} 이미지 조회 결과:`, {
+        projectId: project.project_id,
+        projectName: project.project_name,
+        imageCount: images.length,
+        images: images
+      });
 
-      // 이미지 파일 경로 검증 및 존재 여부 확인
+      // 이미지 파일 존재 여부 확인
       let validFirstImage = null;
-      if (firstImage) {
+      if (images.length > 0) {
+        const image = images[0];
         const fs = require('fs');
         const path = require('path');
-        const imagePath = path.join(__dirname, '../uploads/project/mj/registImage', firstImage.file_name);
         
-        try {
-          const fileExists = fs.existsSync(imagePath);
-          if (fileExists) {
-            const stats = fs.statSync(imagePath);
-            validFirstImage = {
-              ...firstImage,
-              fileExists: true,
-              fileSize: stats.size
-            };
-            
-            devLog(`🖼️ [warehouse] 프로젝트 ${product.project_id} 이미지 정보:`, {
-              projectName: product.project_name,
-              fileName: firstImage.file_name,
-              filePath: imagePath,
-              fileExists: true,
-              fileSize: stats.size,
-              config: {
-                imageBaseUrl: config.imageBaseUrl,
-                env: config.env,
-                isProduction: config.isProduction
-              }
-            });
-          } else {
-            devLog(`❌ [warehouse] 프로젝트 ${product.project_id} 이미지 파일이 존재하지 않음:`, {
-              projectName: product.project_name,
-              fileName: firstImage.file_name,
-              filePath: imagePath
-            });
-          }
-        } catch (error) {
-          devLog(`❌ [warehouse] 프로젝트 ${product.project_id} 이미지 파일 접근 오류:`, {
-            projectName: product.project_name,
-            fileName: firstImage.file_name,
-            error: error.message
-          });
+        // config에서 업로드 경로 가져오기
+        const uploadPath = config.uploadPath;
+        const imagePath = path.join(uploadPath, image.file_name);
+        
+        console.log(`🔍 [Warehouse] 이미지 파일 경로 확인:`, {
+          projectId: project.project_id,
+          storedFilename: image.file_name,
+          fullPath: imagePath,
+          exists: fs.existsSync(imagePath)
+        });
+        
+        if (fs.existsSync(imagePath)) {
+          validFirstImage = image;
+          console.log(`✅ [Warehouse] 이미지 파일 존재 확인: ${image.file_name}`);
+        } else {
+          console.log(`❌ [Warehouse] 이미지 파일 없음: ${imagePath}`);
         }
+      } else {
+        console.log(`⚠️ [Warehouse] 프로젝트 ${project.project_id}에 이미지 없음`);
       }
 
-      const responseDataItem = {
-        project_id: product.project_id,
-        project_name: product.project_name,
-        product_name: product.product_description || product.project_name,
-        description: product.product_description,
-        project_quantity: product.project_quantity,
-        target_price: product.target_price,
-        project_status: product.project_status,
-        entry_quantity: product.entry_quantity,
-        export_quantity: product.export_quantity,
-        remain_quantity: product.remain_quantity,
-        created_at: product.created_at,
-        updated_at: product.updated_at,
-        // 첫 번째 이미지 정보 추가 (파일이 실제로 존재하는 경우에만)
-        first_image: validFirstImage ? {
-          id: validFirstImage.id,
-          original_filename: validFirstImage.original_name,
-          stored_filename: validFirstImage.file_name,
-          file_path: validFirstImage.file_path,
-          created_at: validFirstImage.created_at,
-          file_size: validFirstImage.fileSize,
-          // 환경별 이미지 URL 생성
-          url: `${config.imageBaseUrl}/${validFirstImage.file_name}`,
-          thumbnail_url: `${config.imageBaseUrl}/${validFirstImage.file_name}`
-        } : null
+      // First image info (only if file exists)
+      const first_image = validFirstImage ? {
+        id: validFirstImage.id,
+        original_filename: validFirstImage.original_name,
+        stored_filename: validFirstImage.file_name,
+        file_path: validFirstImage.file_path,
+        created_at: validFirstImage.created_at,
+        url: `${config.imageBaseUrl}/${validFirstImage.file_name}`,
+        thumbnail_url: `${config.imageBaseUrl}/${validFirstImage.file_name}`
+      } : null;
+
+      console.log(`🔍 [Warehouse] 프로젝트 ${project.project_id} 최종 이미지 정보:`, {
+        projectId: project.project_id,
+        hasImage: !!first_image,
+        imageUrl: first_image?.url || 'null'
+      });
+
+      return {
+        ...project,
+        first_image
       };
-
-      // 이미지 정보 로깅 (상용 환경에서는 비활성화)
-
-      return responseDataItem;
     }));
 
-    // 조회 완료 (상용 환경에서는 로그 비활성화)
+    console.log(`🔍 [Warehouse] 이미지 정보 추가 완료: ${productsWithImages.length}개 프로젝트`);
+    
+    // 이미지가 있는 프로젝트와 없는 프로젝트 개수 확인
+    const projectsWithImages = productsWithImages.filter(p => p.first_image);
+    const projectsWithoutImages = productsWithImages.filter(p => !p.first_image);
+    
+    console.log(`📊 [Warehouse] 최종 결과 요약:`, {
+      totalProjects: productsWithImages.length,
+      withImages: projectsWithImages.length,
+      withoutImages: projectsWithoutImages.length,
+      withoutImagesProjects: projectsWithoutImages.map(p => ({ id: p.project_id, name: p.project_name }))
+    });
 
     res.json({
       success: true,
-      products: responseData,
+      products: productsWithImages,
       message: 'remain_quantity > 0인 프로젝트 목록 조회 완료'
     });
-
+    
   } catch (error) {
-    errorLog('❌ [warehouse] remain_quantity > 0인 프로젝트 목록 조회 오류:', error);
+    console.error('❌ [Warehouse] 프로젝트 목록 조회 오류:', error);
     res.status(500).json({ 
-      error: 'remain_quantity > 0인 프로젝트 목록 조회 중 오류가 발생했습니다.',
+      error: '프로젝트 목록 조회 중 오류가 발생했습니다.',
       details: error.message 
     });
   } finally {
