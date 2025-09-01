@@ -676,70 +676,70 @@ router.get('/image/:filename', async (req, res) => {
   }
 });
 
-// 이미지 폴더 접근 가능 여부 확인 (디버깅용)
+// 디버그: 이미지 폴더 상태 확인
 router.get('/debug/images', async (req, res) => {
   try {
-    const fs = require('fs');
+    const fs = require('fs').promises;
     const path = require('path');
     
-    const imageDir = path.join(__dirname, '../uploads/project/mj/registImage');
+    // config에서 업로드 경로 가져오기
+    const uploadPath = config.uploadPath;
     
     // 폴더 존재 여부 확인
-    const dirExists = fs.existsSync(imageDir);
-    
-    // 폴더 내 파일 목록 확인
+    let folderExists = false;
+    let fileCount = 0;
     let files = [];
-    if (dirExists) {
-      try {
-        files = fs.readdirSync(imageDir);
-      } catch (error) {
-        console.error('폴더 읽기 오류:', error);
+    let error = null;
+    
+    try {
+      const stats = await fs.stat(uploadPath);
+      folderExists = stats.isDirectory();
+      
+      if (folderExists) {
+        files = await fs.readdir(uploadPath);
+        fileCount = files.length;
       }
+    } catch (err) {
+      error = err.message;
     }
     
-    // 샘플 이미지 파일 접근 테스트
-    let sampleImageTest = null;
-    if (files.length > 0) {
-      const sampleFile = files[0];
-      const samplePath = path.join(imageDir, sampleFile);
-      try {
-        const stats = fs.statSync(samplePath);
-        sampleImageTest = {
-          fileName: sampleFile,
-          filePath: samplePath,
-          size: stats.size,
-          accessible: true
-        };
-      } catch (error) {
-        sampleImageTest = {
-          fileName: sampleFile,
-          filePath: samplePath,
-          error: error.message,
-          accessible: false
-        };
+    // 상위 디렉토리 정보
+    const parentDir = path.dirname(uploadPath);
+    let parentExists = false;
+    let parentContents = [];
+    
+    try {
+      const parentStats = await fs.stat(parentDir);
+      parentExists = parentStats.isDirectory();
+      
+      if (parentExists) {
+        parentContents = await fs.readdir(parentDir);
       }
+    } catch (err) {
+      // 상위 디렉토리도 없을 수 있음
     }
     
     res.json({
       success: true,
       debug: {
-        imageDir,
-        dirExists,
-        fileCount: files.length,
+        currentWorkingDirectory: process.cwd(),
+        configUploadPath: uploadPath,
+        folderExists,
+        fileCount,
         files: files.slice(0, 10), // 처음 10개만
-        sampleImageTest,
-        config: {
-          env: process.env.NODE_ENV,
-          imageBaseUrl: process.env.IMAGE_BASE_URL,
-          staticBaseUrl: process.env.STATIC_BASE_URL
-        }
+        error,
+        parentDirectory: parentDir,
+        parentExists,
+        parentContents: parentContents.slice(0, 10), // 처음 10개만
+        environment: config.env,
+        imageBaseUrl: config.imageBaseUrl
       }
     });
     
   } catch (error) {
-    console.error('이미지 디버깅 오류:', error);
+    console.error('❌ [Warehouse] 이미지 디버그 오류:', error);
     res.status(500).json({ 
-      error: '이미지 디버깅 중 오류가 발생했습니다.',
+      error: '이미지 디버그 정보 조회 중 오류가 발생했습니다.',
       details: error.message 
     });
   }

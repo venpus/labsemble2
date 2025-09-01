@@ -2,7 +2,7 @@ const config = {
   development: {
     imageBaseUrl: 'http://localhost:5000/images',
     staticBaseUrl: 'http://localhost:5000',
-    uploadPath: 'uploads/project/mj/registImage',
+    uploadPath: 'server/uploads/project/mj/registImage',
     corsOrigin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
     port: 5000,
     timezone: 'Asia/Seoul'
@@ -10,7 +10,7 @@ const config = {
   production: {
     imageBaseUrl: 'https://labsemble.com/images',
     staticBaseUrl: 'https://labsemble.com',
-    uploadPath: 'uploads/project/mj/registImage',
+    uploadPath: 'server/uploads/project/mj/registImage',
     corsOrigin: ['https://labsemble.com', 'http://labsemble.com'],
     port: 5000,
     timezone: 'Asia/Seoul'
@@ -67,6 +67,28 @@ const currentEnv = detectEnvironment();
 // 환경별 설정 가져오기
 const currentConfig = config[currentEnv];
 
+// 절대 경로 계산 함수
+function getAbsoluteUploadPath() {
+  const path = require('path');
+  const os = require('os');
+  
+  // 현재 작업 디렉토리 확인
+  const cwd = process.cwd();
+  console.log('📁 [Config] 현재 작업 디렉토리:', cwd);
+  
+  // ecosystem.config.js의 cwd 설정 확인
+  const ecosystemCwd = '/var/www/labsemble/server';
+  
+  // 상용서버인 경우 ecosystem.config.js의 cwd 사용
+  if (currentEnv === 'production' && cwd !== ecosystemCwd) {
+    console.log('🌐 [Config] 상용서버 감지, ecosystem cwd 사용:', ecosystemCwd);
+    return path.join(ecosystemCwd, 'uploads/project/mj/registImage');
+  }
+  
+  // 개발환경이거나 이미 올바른 디렉토리에 있는 경우
+  return path.join(cwd, 'uploads/project/mj/registImage');
+}
+
 // 환경변수로 오버라이드 가능하도록 설정
 const finalConfig = {
   ...currentConfig,
@@ -81,7 +103,10 @@ const finalConfig = {
   timezone: process.env.TZ || currentConfig.timezone,
   corsOrigin: process.env.CORS_ORIGIN ? 
     process.env.CORS_ORIGIN.split(',').map(origin => origin.trim()) : 
-    currentConfig.corsOrigin
+    currentConfig.corsOrigin,
+  
+  // 절대 경로로 업로드 경로 설정
+  uploadPath: getAbsoluteUploadPath()
 };
 
 // 설정 로그 출력
@@ -91,7 +116,8 @@ console.log('⚙️ [Config] 환경 설정 완료:', {
   staticBaseUrl: finalConfig.staticBaseUrl,
   port: finalConfig.port,
   timezone: finalConfig.timezone,
-  corsOrigin: finalConfig.corsOrigin
+  corsOrigin: finalConfig.corsOrigin,
+  uploadPath: finalConfig.uploadPath
 });
 
 module.exports = finalConfig; 

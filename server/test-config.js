@@ -19,6 +19,39 @@ try {
   console.log('  - 상용서버 여부:', config.isProduction);
   console.log('  - 개발서버 여부:', config.isDevelopment);
   
+  // 업로드 경로 테스트
+  console.log('\n📁 [Test] 업로드 경로 테스트:');
+  const fs = require('fs');
+  const path = require('path');
+  
+  // 업로드 경로 존재 여부 확인
+  if (fs.existsSync(config.uploadPath)) {
+    console.log('  ✅ 업로드 경로 존재:', config.uploadPath);
+    
+    // 파일 목록 확인
+    try {
+      const files = fs.readdirSync(config.uploadPath);
+      console.log('  📄 파일 개수:', files.length);
+      if (files.length > 0) {
+        console.log('  📄 첫 번째 파일:', files[0]);
+      }
+    } catch (err) {
+      console.log('  ❌ 파일 목록 읽기 실패:', err.message);
+    }
+  } else {
+    console.log('  ❌ 업로드 경로 없음:', config.uploadPath);
+    
+    // 상위 디렉토리 확인
+    const parentDir = path.dirname(config.uploadPath);
+    if (fs.existsSync(parentDir)) {
+      console.log('  📁 상위 디렉토리 존재:', parentDir);
+      const parentFiles = fs.readdirSync(parentDir);
+      console.log('  📄 상위 디렉토리 내용:', parentFiles);
+    } else {
+      console.log('  ❌ 상위 디렉토리도 없음:', parentDir);
+    }
+  }
+  
   // 환경 감지 테스트
   console.log('\n🔍 [Test] 환경 감지 테스트:');
   const os = require('os');

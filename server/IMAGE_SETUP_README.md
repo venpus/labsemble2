@@ -1,102 +1,126 @@
 # 🖼️ 이미지 설정 가이드
 
 ## 📋 개요
-이 문서는 상용서버에서 이미지가 정상적으로 표시되도록 설정하는 방법을 설명합니다.
 
-## 🔧 서버 설정 변경사항
+이 문서는 Labsemble 프로젝트의 이미지 업로드 및 표시 설정에 대한 가이드입니다.
 
-### 1. 정적 파일 미들웨어 추가
-- `server/index.js`에 `/images` 경로로 정적 파일 서빙 설정 추가
-- CORS 헤더 및 캐싱 설정 포함
+## 🏗️ 아키텍처
 
-### 2. 환경별 이미지 URL 설정
-- `server/config/config.js` 생성
-- 개발/상용 환경별 이미지 URL 자동 설정
+### 이미지 업로드 흐름
+1. **클라이언트** → 이미지 선택 및 `FormData` 생성
+2. **서버** → `multer`를 통해 이미지 저장
+3. **데이터베이스** → 이미지 메타데이터 저장
+4. **정적 파일 서빙** → `/images` 경로로 이미지 제공
 
-### 3. warehouse API 수정
-- 프록시 엔드포인트 대신 직접 정적 파일 URL 사용
-- 환경별 설정 적용
-
-## 🌍 환경별 설정
-
-### 개발 환경 (Development)
-```bash
-NODE_ENV=development
-# 자동으로 http://localhost:5000/images 사용
-```
-
-### 상용 환경 (Production)
-```bash
-NODE_ENV=production
-IMAGE_BASE_URL=https://yourdomain.com/images
-STATIC_BASE_URL=https://yourdomain.com
-```
-
-## 📁 파일 구조
+### 폴더 구조
 ```
 server/
-├── config/
-│   └── config.js          # 환경별 설정
 ├── uploads/
 │   └── project/
 │       └── mj/
-│           └── registImage/  # 프로젝트 등록 이미지
-├── index.js               # 정적 파일 미들웨어 설정
-└── routes/
-    └── warehouse.js       # 이미지 URL 생성 로직
+│           ├── registImage/     # 프로젝트 등록 이미지
+│           └── realImage/       # 실제 제품 이미지
 ```
 
-## 🚀 배포 시 주의사항
+## ⚙️ 설정 파일
 
-### 1. 환경 변수 설정
+### `server/config/config.js`
+- **개발환경**: `http://localhost:5000/images`
+- **상용환경**: `https://labsemble.com/images`
+- **자동 환경 감지**: 호스트명, IP 주소 기반
+
+### 환경 변수 (선택사항)
 ```bash
-# .env 파일에 추가
 NODE_ENV=production
-IMAGE_BASE_URL=https://yourdomain.com/images
-STATIC_BASE_URL=https://yourdomain.com
+IMAGE_BASE_URL=https://labsemble.com/images
+STATIC_BASE_URL=https://labsemble.com
+CORS_ORIGIN=https://labsemble.com
 ```
 
-### 2. 이미지 폴더 권한
-```bash
-# 이미지 폴더 읽기 권한 확인
-chmod -R 755 uploads/project/mj/registImage
-```
-
-### 3. 웹서버 설정 (Nginx/Apache)
-```nginx
-# Nginx 예시
-location /images/ {
-    alias /path/to/your/app/uploads/project/mj/registImage/;
-    expires 1y;
-    add_header Cache-Control "public, immutable";
-}
-```
-
-## 🔍 문제 해결
+## 🔧 문제 해결
 
 ### 이미지가 보이지 않는 경우
-1. **환경 변수 확인**: `NODE_ENV`, `IMAGE_BASE_URL` 설정 확인
-2. **폴더 권한 확인**: `uploads/project/mj/registImage` 폴더 접근 권한
-3. **웹서버 설정 확인**: 정적 파일 서빙 설정 확인
-4. **브라우저 개발자 도구**: 네트워크 탭에서 이미지 요청 상태 확인
 
-### 로그 확인
+#### 1. 업로드 경로 확인
 ```bash
-# 서버 로그에서 이미지 요청 확인
-tail -f server.log | grep "images"
+cd /path/to/your/app/server
+node test-config.js
 ```
 
-## 📝 변경 사항 요약
+#### 2. 디버그 엔드포인트 확인
+```bash
+curl "https://labsemble.com/api/warehouse/debug/images"
+```
 
-1. ✅ 정적 파일 미들웨어 추가 (`/images` 경로)
-2. ✅ 환경별 설정 파일 생성
-3. ✅ warehouse API에서 환경별 URL 생성
-4. ✅ 클라이언트에서 이미지 로드 실패 시 대체 처리
-5. ✅ 환경 변수 설정 가이드 추가
+#### 3. 폴더 권한 확인
+```bash
+ls -la /var/www/labsemble/server/uploads/
+chmod -R 755 /var/www/labsemble/server/uploads/
+```
 
-## 🔄 다음 단계
+#### 4. PM2 재시작
+```bash
+pm2 restart labsemble-server
+```
 
-1. 서버 재시작
-2. 환경 변수 설정 (상용 환경)
-3. 이미지 폴더 권한 확인
-4. 테스트 및 검증 
+### 일반적인 문제들
+
+#### A. 업로드 폴더가 잘못된 위치에 생성됨
+- **원인**: 상대 경로 사용
+- **해결**: `config.js`에서 절대 경로 사용
+
+#### B. 이미지 URL이 잘못됨
+- **원인**: 환경별 설정 미적용
+- **해결**: `NODE_ENV` 설정 또는 자동 감지 확인
+
+#### C. CORS 오류
+- **원인**: 허용된 origin 설정 오류
+- **해결**: `config.js`의 `corsOrigin` 확인
+
+## 🧪 테스트
+
+### 설정 테스트
+```bash
+node test-config.js
+```
+
+### 이미지 업로드 테스트
+1. 프로젝트 등록 페이지에서 이미지 업로드
+2. 업로드된 이미지가 올바른 폴더에 저장되는지 확인
+3. `ProjectSearchModal`에서 이미지가 표시되는지 확인
+
+### API 테스트
+```bash
+# 이미지 폴더 상태 확인
+curl "https://labsemble.com/api/warehouse/debug/images"
+
+# 프로젝트 목록 조회 (이미지 포함)
+curl "https://labsemble.com/api/warehouse/products-with-remain-quantity" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+## 📝 로그 확인
+
+### 서버 로그
+```bash
+pm2 logs labsemble-server --lines 50
+```
+
+### 주요 로그 메시지
+- `🌐 [Config] 호스트명으로 상용서버 감지`
+- `⚙️ [Config] 환경 설정 완료`
+- `📁 [Config] 현재 작업 디렉토리`
+- `🌐 [Config] 상용서버 감지, ecosystem cwd 사용`
+
+## 🔄 업데이트 히스토리
+
+- **2025-09-01**: 자동 환경 감지 및 절대 경로 설정 추가
+- **2025-09-01**: 이미지 디버그 엔드포인트 추가
+- **2025-09-01**: 설정 테스트 스크립트 개선
+
+## 📞 지원
+
+문제가 지속되는 경우:
+1. `test-config.js` 실행 결과 공유
+2. `/api/warehouse/debug/images` 응답 공유
+3. 서버 로그 공유 

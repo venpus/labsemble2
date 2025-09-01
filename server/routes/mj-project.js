@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { pool } = require('../config/database');
 const authMiddleware = require('../middleware/auth');
+const config = require('../config/config');
 const { 
   getCurrentKSTString, 
   formatDate, 
@@ -17,7 +18,7 @@ const router = express.Router();
 // 이미지 업로드를 위한 multer 설정
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadPath = 'uploads/project/mj/registImage';
+    const uploadPath = config.uploadPath;
     
     // 폴더가 없으면 생성
     if (!fs.existsSync(uploadPath)) {
@@ -37,7 +38,7 @@ const storage = multer.diskStorage({
 // 제품 이미지 업로드를 위한 multer 설정
 const realImageStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadPath = 'uploads/project/mj/realImage';
+    const uploadPath = path.join(path.dirname(config.uploadPath), 'realImage');
     
     // 폴더가 없으면 생성
     if (!fs.existsSync(uploadPath)) {
