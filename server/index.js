@@ -4,8 +4,11 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 
-// 시간대 설정 - 한국 시간대(KST)로 통일
-process.env.TZ = 'Asia/Seoul';
+// 설정 파일 로드
+const config = require('./config/config');
+
+// 시간대 설정 - config에서 가져온 값 사용
+process.env.TZ = config.timezone;
 
 const { 
   testConnection, 
@@ -19,12 +22,12 @@ const {
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = config.port;
 
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: config.corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -42,7 +45,7 @@ app.use('/uploads', (req, res, next) => {
 }, express.static('uploads'));
 
 // 이미지 전용 정적 파일 제공 (프로젝트 등록 이미지)
-app.use('/images', express.static('uploads/project/mj/registImage', {
+app.use('/images', express.static(config.uploadPath, {
   setHeaders: (res, filePath) => {
     // CORS 헤더
     res.setHeader('Access-Control-Allow-Origin', '*');

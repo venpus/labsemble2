@@ -676,6 +676,75 @@ router.get('/image/:filename', async (req, res) => {
   }
 });
 
+// 이미지 폴더 접근 가능 여부 확인 (디버깅용)
+router.get('/debug/images', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    
+    const imageDir = path.join(__dirname, '../uploads/project/mj/registImage');
+    
+    // 폴더 존재 여부 확인
+    const dirExists = fs.existsSync(imageDir);
+    
+    // 폴더 내 파일 목록 확인
+    let files = [];
+    if (dirExists) {
+      try {
+        files = fs.readdirSync(imageDir);
+      } catch (error) {
+        console.error('폴더 읽기 오류:', error);
+      }
+    }
+    
+    // 샘플 이미지 파일 접근 테스트
+    let sampleImageTest = null;
+    if (files.length > 0) {
+      const sampleFile = files[0];
+      const samplePath = path.join(imageDir, sampleFile);
+      try {
+        const stats = fs.statSync(samplePath);
+        sampleImageTest = {
+          fileName: sampleFile,
+          filePath: samplePath,
+          size: stats.size,
+          accessible: true
+        };
+      } catch (error) {
+        sampleImageTest = {
+          fileName: sampleFile,
+          filePath: samplePath,
+          error: error.message,
+          accessible: false
+        };
+      }
+    }
+    
+    res.json({
+      success: true,
+      debug: {
+        imageDir,
+        dirExists,
+        fileCount: files.length,
+        files: files.slice(0, 10), // 처음 10개만
+        sampleImageTest,
+        config: {
+          env: process.env.NODE_ENV,
+          imageBaseUrl: process.env.IMAGE_BASE_URL,
+          staticBaseUrl: process.env.STATIC_BASE_URL
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('이미지 디버깅 오류:', error);
+    res.status(500).json({ 
+      error: '이미지 디버깅 중 오류가 발생했습니다.',
+      details: error.message 
+    });
+  }
+});
+
 // mj_project에서 remain_quantity > 0인 프로젝트 목록 조회 (패킹리스트용)
 router.get('/products-with-remain-quantity', authMiddleware, async (req, res) => {
   const connection = await pool.getConnection();
@@ -716,7 +785,50 @@ router.get('/products-with-remain-quantity', authMiddleware, async (req, res) =>
       // firstImage 변수 정의
       const firstImage = images.length > 0 ? images[0] : null;
 
-      // 이미지 파일 경로 검증 (상용 환경에서는 로그 비활성화)
+      // 이미지 파일 경로 검증 및 존재 여부 확인
+      let validFirstImage = null;
+      if (firstImage) {
+        const fs = require('fs');
+        const path = require('path');
+        const imagePath = path.join(__dirname, '../uploads/project/mj/registImage', firstImage.file_name);
+        
+        try {
+          const fileExists = fs.existsSync(imagePath);
+          if (fileExists) {
+            const stats = fs.statSync(imagePath);
+            validFirstImage = {
+              ...firstImage,
+              fileExists: true,
+              fileSize: stats.size
+            };
+            
+            devLog(`🖼️ [warehouse] 프로젝트 ${product.project_id} 이미지 정보:`, {
+              projectName: product.project_name,
+              fileName: firstImage.file_name,
+              filePath: imagePath,
+              fileExists: true,
+              fileSize: stats.size,
+              config: {
+                imageBaseUrl: config.imageBaseUrl,
+                env: config.env,
+                isProduction: config.isProduction
+              }
+            });
+          } else {
+            devLog(`❌ [warehouse] 프로젝트 ${product.project_id} 이미지 파일이 존재하지 않음:`, {
+              projectName: product.project_name,
+              fileName: firstImage.file_name,
+              filePath: imagePath
+            });
+          }
+        } catch (error) {
+          devLog(`❌ [warehouse] 프로젝트 ${product.project_id} 이미지 파일 접근 오류:`, {
+            projectName: product.project_name,
+            fileName: firstImage.file_name,
+            error: error.message
+          });
+        }
+      }
 
       const responseDataItem = {
         project_id: product.project_id,
@@ -731,16 +843,17 @@ router.get('/products-with-remain-quantity', authMiddleware, async (req, res) =>
         remain_quantity: product.remain_quantity,
         created_at: product.created_at,
         updated_at: product.updated_at,
-        // 첫 번째 이미지 정보 추가 (환경별 URL 생성)
-        first_image: firstImage ? {
-          id: firstImage.id,
-          original_filename: firstImage.original_name,
-          stored_filename: firstImage.file_name, // file_name 사용
-          file_path: firstImage.file_path, // file_path 저장
-          created_at: firstImage.created_at,
+        // 첫 번째 이미지 정보 추가 (파일이 실제로 존재하는 경우에만)
+        first_image: validFirstImage ? {
+          id: validFirstImage.id,
+          original_filename: validFirstImage.original_name,
+          stored_filename: validFirstImage.file_name,
+          file_path: validFirstImage.file_path,
+          created_at: validFirstImage.created_at,
+          file_size: validFirstImage.fileSize,
           // 환경별 이미지 URL 생성
-          url: `${config.imageBaseUrl}/${firstImage.file_name}`,
-          thumbnail_url: `${config.imageBaseUrl}/${firstImage.file_name}`
+          url: `${config.imageBaseUrl}/${validFirstImage.file_name}`,
+          thumbnail_url: `${config.imageBaseUrl}/${validFirstImage.file_name}`
         } : null
       };
 

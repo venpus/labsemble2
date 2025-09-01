@@ -185,6 +185,12 @@ const ProjectSearchModal = ({ isOpen, onClose, onSelectProject }) => {
                               return;
                             }
                             
+                            // 3차: 직접 파일명으로 재시도
+                            const directUrl = `/images/${project.first_image.stored_filename}`;
+                            console.log('🔄 [ProjectSearchModal] 직접 파일명으로 재시도:', directUrl);
+                            e.target.src = directUrl;
+                            return;
+                            
                             // 2차: 기본 아이콘 표시
                             e.target.style.display = 'none';
                             e.target.nextSibling.style.display = 'flex';
