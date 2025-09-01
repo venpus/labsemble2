@@ -80,13 +80,23 @@ function getAbsoluteUploadPath() {
   const ecosystemCwd = '/var/www/labsemble/server';
   
   // 상용서버인 경우 ecosystem.config.js의 cwd 사용
-  if (currentEnv === 'production' && cwd !== ecosystemCwd) {
+  if (currentEnv === 'production') {
     console.log('🌐 [Config] 상용서버 감지, ecosystem cwd 사용:', ecosystemCwd);
-    return path.join(ecosystemCwd, 'uploads/project/mj/registImage');
+    
+    // ecosystem cwd가 존재하는지 확인
+    if (require('fs').existsSync(ecosystemCwd)) {
+      const uploadPath = path.join(ecosystemCwd, 'uploads/project/mj/registImage');
+      console.log('🌐 [Config] 상용서버 업로드 경로:', uploadPath);
+      return uploadPath;
+    } else {
+      console.log('⚠️ [Config] ecosystem cwd가 존재하지 않음, 현재 cwd 사용');
+    }
   }
   
-  // 개발환경이거나 이미 올바른 디렉토리에 있는 경우
-  return path.join(cwd, 'uploads/project/mj/registImage');
+  // 개발환경이거나 ecosystem cwd가 없는 경우
+  const uploadPath = path.join(cwd, 'uploads/project/mj/registImage');
+  console.log('🏠 [Config] 개발환경 또는 fallback 업로드 경로:', uploadPath);
+  return uploadPath;
 }
 
 // 환경변수로 오버라이드 가능하도록 설정

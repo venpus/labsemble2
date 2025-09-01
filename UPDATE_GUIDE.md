@@ -304,7 +304,7 @@ cd ..
 ### **4.1 PM2로 서버 재시작**
 ```bash
 # 현재 실행 중인 프로세스 확인
-pm2 list
+sudo -u labsemble pm2 list
 
 # 서버 재시작 (권장)
 pm2 restart labsemble-server

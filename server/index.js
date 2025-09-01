@@ -67,6 +67,12 @@ app.use('/images', express.static(config.uploadPath, {
   }
 }));
 
+// 디버그: 정적 파일 경로 확인
+console.log('📁 [Server] 정적 파일 미들웨어 설정:');
+console.log('  - /images 경로:', config.uploadPath);
+console.log('  - 절대 경로:', require('path').resolve(config.uploadPath));
+console.log('  - 폴더 존재:', require('fs').existsSync(config.uploadPath));
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
