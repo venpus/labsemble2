@@ -24,6 +24,23 @@ require('dotenv').config();
 const app = express();
 const PORT = config.port;
 
+// 서버 환경 정보 로그 출력
+console.log('\n🚀 [Server] ========================================');
+console.log('🚀 [Server] 서버 시작');
+console.log('🚀 [Server] ========================================');
+console.log('🌍 [Server] 환경 정보:');
+console.log('  - NODE_ENV:', process.env.NODE_ENV || 'undefined');
+console.log('  - 감지된 환경:', config.env);
+console.log('  - 상용서버 여부:', config.isProduction ? '✅ YES' : '❌ NO');
+console.log('  - 개발서버 여부:', config.isDevelopment ? '✅ YES' : '❌ NO');
+console.log('  - 포트:', config.port);
+console.log('  - 시간대:', config.timezone);
+console.log('  - 이미지 URL:', config.imageBaseUrl);
+console.log('  - 정적 URL:', config.staticBaseUrl);
+console.log('  - 업로드 경로:', config.uploadPath);
+console.log('  - CORS Origin:', config.corsOrigin);
+console.log('🚀 [Server] ========================================\n');
+
 // Middleware
 app.use(helmet());
 app.use(cors({
@@ -384,9 +401,22 @@ const startServer = async () => {
     
     // 서버 시작
     app.listen(PORT, () => {
-      console.log(`🚀 Manufacturing API 서버가 포트 ${PORT}에서 실행 중입니다.`);
-      console.log(`🌍 Timezone: ${process.env.TZ}`);
-      console.log(`📊 마이그레이션 상태 확인: http://localhost:${PORT}/api/migration/status`);
+      console.log('\n🎉 [Server] ========================================');
+      console.log('🎉 [Server] 서버 시작 완료!');
+      console.log('🎉 [Server] ========================================');
+      console.log(`🌐 [Server] 서버 정보:`);
+      console.log(`  - URL: http${config.isProduction ? 's' : ''}://${config.isProduction ? 'labsemble.com' : 'localhost'}:${PORT}`);
+      console.log(`  - 환경: ${config.env.toUpperCase()}`);
+      console.log(`  - 모드: ${config.isProduction ? '🟢 PRODUCTION' : '🟡 DEVELOPMENT'}`);
+      console.log(`  - 포트: ${PORT}`);
+      console.log(`  - 시간대: ${process.env.TZ}`);
+      console.log(`  - 이미지 서비스: ${config.imageBaseUrl}`);
+      console.log(`  - 업로드 경로: ${config.uploadPath}`);
+      console.log(`📊 [Server] API 엔드포인트:`);
+      console.log(`  - 상태 확인: http${config.isProduction ? 's' : ''}://${config.isProduction ? 'labsemble.com' : 'localhost'}:${PORT}/api/health`);
+      console.log(`  - 마이그레이션: http${config.isProduction ? 's' : ''}://${config.isProduction ? 'labsemble.com' : 'localhost'}:${PORT}/api/migration/status`);
+      console.log(`  - 이미지 디버그: http${config.isProduction ? 's' : ''}://${config.isProduction ? 'labsemble.com' : 'localhost'}:${PORT}/api/warehouse/debug/images`);
+      console.log('🎉 [Server] ========================================\n');
       console.log('💡 서버가 완전히 시작되기까지 몇 초 정도 소요될 수 있습니다.');
     });
   } catch (error) {
